@@ -1,0 +1,569 @@
+//*************************************************************************
+//  File Name:			MPI_leaves_h_seba.script
+//  Purpose: Detects spot-like features on leaf images, images from MPIZ-Ko"ln
+//
+// 							EVOTEC  TECHNOLOGIES 
+//  						Olavi Ollikainen
+//  e-mail: 			Olavi.Ollikainen@evotec-technologies.com
+//	phone :			00 372 52 75 262
+//  With corrections from Kurt Stu"ber MPI Ko"ln
+//  phone:          +49 (0) 221 5062 120
+//  e-mail           stueber@mpiz-koeln.mpg.de
+//  With further modifications from Sebastian Schaaf MPIZ Ko"ln
+//  phone			+49 (0) 221 5062 323
+//	e-mail			schaaf@mpiz-koeln.mpg.de
+//*************************************************************************
+//
+// 				Output parameters:
+//													* Number of valid Cells in Stack
+//													* Number of valid Spots in Stack
+//													* Number of Spots in and out of Cells in Stack
+//													* Percents of inner Spots in Stack
+//													* Average Area of Cells in Stack
+//													* Average Area of Cells - Standard Deviation in Stack
+//													* Percents of found Cell Area in Stack
+//													* Average Number of Spots in Cells in Stack
+// 													* Average Number of Spots in Cells - Standard Deviation in Stack
+//													* Average Number of Spots per recognized Area in Stack
+//
+//													* Number of Leaf Cells in whole Well
+//													* Average Cell Area in whole Well
+//													* Average Cell Area in whole Well - Standard Deviation
+//													* Number of Spots in whole Well
+//   												* Average Number of Spots per Cell in whole Well
+//													* Average Number of Spots per Cell in whole Well - Standard Deviation
+//													* Total Cell Area in Well
+//													* Percentage of total Cell Area in Well
+//
+//													* Number Of Stomata
+//
+//													* Average Intensity of Spots
+//													* Average Area of Spots
+//													* Average Length of Spots
+//													* Average Half Width of Spots
+//													* Average Width to Length Ratio of Spots
+//													* Average Width to Length Ratio of Spots - Standard Deviation
+//													* Average Roundness of Spots
+//													* Average Roundness of Spots - Standard Deviation
+//													* Average Contrast of Spots
+//													* Average Contrast of Spots - Standard Deviation
+//													* Average Peak Intensity of Spots
+//
+//													* Total number of Stacks analyzed in Well
+//													* Number of valid Stacks in Well
+//													* Percentage of valid Stacks in Well
+//
+//*******************************************************************************************************************************
+
+// INPUT PARAMETERS
+input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
+input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
+input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
+input(ShowIllustrations,YES, "ShowIllustrations","y","YES- Output illustrations are depicted. No- Output illustrations are not shown.")
+
+input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
+comment(
+input(spotMinimumArea, 21, "SpotMinimumArea","i","Minimum allowed area for spots. Objects with area less than the limit are discarded.")
+input(SpotMinimumContrast, 0.25, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
+input(SpotMinimumRoundness, 0.65, "SpotMinimumRoundness", "d", "Minimum allowed roundness parameter for spots. Objects with the parameter value less than the limit are discarded.")
+input(MinimumWidth2LengthRatio, 0.5, "SpotMinimumWidth2LengthRatio","d", "Minimum allowed width to length ratio for spots. Objects with the ratio below the limit are discarded.")
+)
+// READS IN IMAGES
+Singlewell(compact=yes)
+
+// COUNTS FIELDS AND CONTROLS IF ALL IMAGES ARE PRESENT
+RobatzekProcs::ControlImageFieldsStackAC2(sourcedata, NumberOfChannels, ZplanesInStack, StackNo)
+set(InvalidStacks = 0)  //counts black/grey stacks without information
+set(BadStacks = 0)   //counts stacks with Signal but no recognized cells
+set(all_VarsOK = 0)
+
+// LOOP OVER IMAGE FIELDS
+Foreach(StartStack .. EndStack, "_StackCounter") 
+	// Assigns image names for the current field, IM_CH1 - first channel image, IM_CH2 - second channel image etc
+	RobatzekProcs::Assign_FirstLastZplane()
+	
+	// User script STARTS
+	set( imagefilename1 = SourceData.sourcefilename[0])
+
+	RobatzekProcs::CreateDataCubeWithControl()
+	
+	RobatzekProcs::DataCubeProjectionCorrection()
+	
+	////// Projects maximum intensity for each x-y position from datacube to image
+	rearrange(datacube,vec(vec(0,0,1),vec(1,0,0),vec(0,1,0)), vec(datacube.depth, datacube.width,datacube.height), reduce="max")
+		
+	delete(datacube) 
+	set(IM_projected1=result)
+	set(IM_projected2=result)
+	////////////////////////////////////////////////////////////////////////////////////////
+		
+	RobatzekProcs::LeafCellsDetection(IM_projected1)
+	RobatzekProcs::DetectType2Objects(IM_projected1, Lines,LeafCells)
+	///////////////////////////////////////////////////// Convolution before spot detection //////////////////////////
+	// added by kurt stueber 2006-09-08 //
+	//convolutionmask("Disk",3)
+	//convolution(image=IM_projected2, faster=yes)
+	//set(IM_projected2=image)
+
+	///////////////////////////////////////////////////// Spot detection
+	// Creates the SearchRegion, where the spots are searched - for too big Cells
+	CalcErosion(1,objects=BigLeafCells)
+	set(BigLeafCells=objects)
+	carrypixels(image=objects.eroded.image, mask=Lines.sk_mod_skeleton_LayerRemoved, data=0)
+	Setattr(SearchRegion,image.vector, objects=BigLeafCells)
+	CalcArea(SearchRegion)
+	Set(BigLeafCells=objects)
+		
+	spot_detection_c_inner(IM_projected2 , BigLeafCells.SearchRegion, BigLeafCells, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	RobatzekProcs::SpotClassificationLeafCells()
+	
+	set( BigCellSpots = SpotsFiltered )
+	//if(ShowIllustrations)
+		//imageview(BigCellSpots.border, "Outer Spots",image=IM_projected2, title = "Spots out of recognized Cell Borders", gamma=2.0)
+	//end()
+		
+	// Creates the SearchRegion, where the spots are searched - for normal Cells
+	CalcErosion(1,objects=LeafCells)
+	set(LeafCells=objects)
+	carrypixels(image=objects.eroded.image, mask=Lines.sk_mod_skeleton_LayerRemoved, data=0)
+	Setattr(SearchRegion,image.vector, objects=LeafCells)
+	CalcArea(SearchRegion)
+	Set(LeafCells=objects)
+		
+	// Detects the initial set of spots
+	spot_detection_c_inner(IM_projected2, LeafCells.SearchRegion, LeafCells, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	delete(spotcandidates,wholecells)
+		
+	// Detects the actual spot locations and attributes like area, contrast, width, length etc and classifies the spots and filters the spots.
+	RobatzekProcs::SpotClassificationLeafCells()
+	
+	// HAUSTORIA CLASSIFICATION
+	//Detects the inital objects, outputs also statistics Line_mean and nuclei_quantile7
+	RobatzekProcs::Haustoria_detection(IM_projected1, Lines, showillustrations=no)
+	
+	objectfilter(intensity>1.3*line_mean and intensity>nuclei_quantile7 and half_width>4 and lines_area<5 and  (Width2LengthRatio>0.45 or (intensity>1.4*line_mean and Width2LengthRatio>0.4)), objects=haustoria) 
+	set(Haustoria=Objects)
+		
+	// Discards spots, which overlap with haustoria
+	and(image=SpotsFiltered.body.image,mask=Haustoria.body.mask.image)
+	setattr(Haustoria,image.vector,objects=SpotsFiltered)
+	calcarea(Haustoria)
+	Objectfilter(Haustoria_area<1)
+	set(SpotsFiltered=objects)
+		
+	Spot_detection_dataToSearchObjects(IM_projected1, "SearchRegion",SpotsFiltered,LeafCells)
+	set(LeafCells=Wholecells)
+
+	// STOMATA AND GAPS CLASSIFICATION
+	objectfilter(area>300 and ((DarkToRegion4<0.32 and Border_intensity>Line_mean) or (DarkToRegion4<0.24 and Border_intensity>0.8*Line_mean)), objects=objectstype2)
+	set(Stomata=objects)
+	CalcStat("max",Stencil=body,image=Stomata.body.image,objects=objectstype2)
+	objectfilter(max==0)
+	set(Gaps=objects)
+		
+	set( namelength = length( imagefilename1 ) )
+	set( corename = substr( imagefilename1, 1, namelength - 5 ) )
+	gamma( 2.0, image=IM_projected1)
+	set( Image_out = image)
+	writeimage( imagefile=corename & "_" & FirstZplane & "-" & LastZplane & ".png", image=Image_out, imageformat="png",  )
+	//write( "\tpng\t" & corename & "_" & FirstZplane & "-" & LastZplane & ".png" , logfilename, "ascii", append=true )
+		
+	if(showIllustrations)
+		imageview(IM_projected1, "Signal",image=IM_projected1, gamma=2.0)
+		if(SpotsFiltered.count>0)
+			imageview(Leafcells.border, "Cells " & _StackCounter, image=IM_projected1, title="Detected Leaf Cells in Stack # " & _StackCounter, gamma=2.0)
+			imageview(Leafcells.body, "Cells Area " & _StackCounter, image=IM_projected1,title="Detected Leaf Cells in Stack #" & _StackCounter, gamma=2.0)
+			//imageview(gaps.border, "Gaps",image=IM_projected1,title="Detected gaps between leaf cells",gamma=2.0)
+			//imageview(Stomata.border, "Stomata",image=IM_projected1,title="Detected Stomata",gamma=2.0)
+			//imageview(Haustoria.border,"Haustoria", image=IM_projected1, title="Detected Haustoria", gamma=2)
+			imageview(SpotsFiltered.border, "Spots " & _StackCounter, image=IM_projected1, title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
+			imageview(BigCellSpots.border, "Outer Spots " & _StackCounter, image=IM_projected1, title = "Spots out of recognized Cell Borders in Stack # " & _StackCounter, gamma=2.0)
+		else()
+			set(InvalidStacks=InvalidStacks+1)
+		end()
+	end()
+	delete(M10,M11,M8,m9, ol_temp1,ol_temp2,M_bright, m_bright4, IM_planenumber,IM_sk_mod_skeleton_LayerRemoved,mask,image,result,IM_projected2,spotsfilteredout,nuclei,r6,r7,spots,PlanenumberImage)
+	// User script ENDS
+		
+	// Output sequence starts
+	set(EntireNumberOfSpotsInStack = (BigCellSpots.count + SpotsFiltered.count))
+	set(PercentageCellAreaInPicture = (100 * ((1.0*LeafCells.SearchRegionArea.sum)/(1.0*357760))))
+	set(SpotsPerValidArea = ((1.0 * SpotsFiltered.count) / (1.0 * LeafCells.SearchRegionArea.sum)))
+		
+	if(StackNo == 0)  //if complete well
+		if (_StackCounter == 1)    //steps for first stack
+			push(NumberOfCellsInStackVector, leafcells.count)
+			push(NumberOfSpotsInStackVector, SpotsFiltered.count)
+			push(EntireNumberOfSpotsInStackVector, EntireNumberOfSpotsInStack)
+			if(PercentageCellAreaInPicture > 0.3)
+				push(SpotsPerValidAreaVector, SpotsPerValidArea)
+			else()
+				push(SpotsPerValidAreaVector, NAN)
+			end()
+			if(SpotsFiltered.count > 0)
+				set(PercentageOfValidSpots = (100 * (1.0 * SpotsFiltered.count)/((1.0 * SpotsFiltered.count) + (1.0 * BigCellSpots.count))))
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			else()
+				set(PercentageOfValidSpots = 0.0)
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			end()
+			if(PercentageOfValidSpots > 25)
+				push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
+				push(AverageAreaOfCellsInStackStddevVector, leafcells.SearchRegionArea.stddev)
+				push(AverageNumberOfSpotsPerCellVector, leafcells.NumberOfSpots.mean)
+				push(AverageNumberOfSpotsPerCellStddevVector, leafcells.NumberOfSpots.stddev)
+				push(PercentageCellAreaInPictureVector, PercentageCellAreaInPicture)
+				if(all_VarsOK == 0)
+					set(all_LeafCells=LeafCells)
+					set(all_SpotsFiltered=SpotsFiltered)
+					set(all_ObjectsType2=ObjectsType2)
+					//set(all_Haustoria=Haustoria)
+					set(all_Stomata=Stomata)
+					set(all_Gaps=Gaps)
+					set(all_VarsOK = all_VarsOK + 1)
+				end()
+			else()
+				push(AverageAreaOfCellsInStackVector, NAN)
+				push(AverageAreaOfCellsInStackStddevVector, NAN)
+				push(AverageNumberOfSpotsPerCellVector, NAN)
+				push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+				push(PercentageCellAreaInPictureVector, NAN)
+				Set(BadStacks = BadStacks + 1)
+			end()
+			push( StacksUsed, _StackCounter )
+		else()  //steps for stacks # 2...oo	
+			push( NumberOfCellsInStackVector, leafcells.count)
+			push(NumberOfSpotsInStackVector, SpotsFiltered.count)	
+			push(EntireNumberOfSpotsInStackVector, EntireNumberOfSpotsInStack)
+			if(PercentageCellAreaInPicture > 0.3)
+				push(SpotsPerValidAreaVector, SpotsPerValidArea)
+			else()
+				push(SpotsPerValidAreaVector, NAN)
+			end()
+			if(SpotsFiltered.count > 0)
+				set(PercentageOfValidSpots = (100 * (1.0 * SpotsFiltered.count)/((1.0 * SpotsFiltered.count) + (1.0 * BigCellSpots.count))))
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			else()
+				set(PercentageOfValidSpots = 0.0)
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			end()
+			if(PercentageOfValidSpots > 25)
+				push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
+				push(AverageAreaOfCellsInStackStddevVector, leafcells.SearchRegionArea.stddev)
+				push(AverageNumberOfSpotsPerCellVector, leafcells.NumberOfSpots.mean)
+				push(AverageNumberOfSpotsPerCellStddevVector, leafcells.NumberOfSpots.stddev)
+				push(PercentageCellAreaInPictureVector, PercentageCellAreaInPicture)
+				if(all_VarsOK == 0)
+					set(all_LeafCells=LeafCells)
+					set(all_SpotsFiltered=SpotsFiltered)
+					set(all_ObjectsType2=ObjectsType2)
+					//set(all_Haustoria=Haustoria)
+					set(all_Stomata=Stomata)
+					set(all_Gaps=Gaps)
+					set(all_VarsOK = all_VarsOK + 1)
+				else()
+					AddObjects(LeafCells, objects=all_LeafCells, CheckOverlap=no) 
+					set(all_LeafCells=objects)  // Renames output from AddObjects()
+					AddObjects(SpotsFiltered, objects=all_SpotsFiltered, CheckOverlap=no) 
+					set(all_SpotsFiltered=objects)
+					AddObjects(ObjectsType2, objects=all_ObjectsType2, CheckOverlap=no) 
+					set(all_ObjectsType2=objects)
+					//AddObjects(Haustoria, objects=all_Haustoria, CheckOverlap=no) 
+					//set(all_Haustoria=objects)
+					AddObjects(Stomata, objects=all_Stomata, CheckOverlap=no) 
+					set(all_Stomata=objects)
+					AddObjects(Gaps, objects=all_Gaps, CheckOverlap=no) 
+					set(all_Gaps=objects)		
+				end()
+			else()
+				push(AverageAreaOfCellsInStackVector, NAN)
+				push(AverageAreaOfCellsInStackStddevVector, NAN)
+				push(AverageNumberOfSpotsPerCellVector, NAN)
+				push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+				push(PercentageCellAreaInPictureVector, NAN)
+				set(BadStacks = BadStacks + 1)
+			end()
+			push( StacksUsed, _StackCounter )
+		end()
+	else()  //if single stack
+		push( NumberOfCellsInStackVector, leafcells.count)
+		push(NumberOfSpotsInStackVector, SpotsFiltered.count)
+		push(EntireNumberOfSpotsInStackVector, EntireNumberOfSpotsInStack)
+		if(PercentageCellAreaInPicture > 0.3)
+			push(SpotsPerValidAreaVector, SpotsPerValidArea)
+		else()
+			push(SpotsPerValidAreaVector, NAN)
+		end()
+		if(SpotsFiltered.count > 0)
+			set(PercentageOfValidSpots = (100 * (1.0 * SpotsFiltered.count)/((1.0 * SpotsFiltered.count) + (1.0 * BigCellSpots.count))))
+			push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+		else()
+			set(PercentageOfValidSpots = 0.0)
+			push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+		end()
+		if(SpotsFiltered.count > 0)
+			if(PercentageOfValidSpots > 25)
+				push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
+				push(AverageAreaOfCellsInStackStddevVector, leafcells.SearchRegionArea.stddev)
+				push(AverageNumberOfSpotsPerCellVector, leafcells.NumberOfSpots.mean)
+				push(AverageNumberOfSpotsPerCellStddevVector, leafcells.NumberOfSpots.stddev)
+				push(PercentageCellAreaInPictureVector, PercentageCellAreaInPicture)
+			else()
+				Set(BadStacks = BadStacks + 1)
+				push(AverageAreaOfCellsInStackVector, NAN)
+				push(AverageAreaOfCellsInStackStddevVector, NAN)
+				push(AverageNumberOfSpotsPerCellVector, NAN)
+				push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+				push(PercentageCellAreaInPictureVector, NAN)
+			end()
+		else()
+			push(AverageAreaOfCellsInStackVector, NAN)
+			push(AverageAreaOfCellsInStackStddevVector, NAN)
+			push(AverageNumberOfSpotsPerCellVector, NAN)
+			push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+		end()
+		set(all_LeafCells=LeafCells)
+		set(all_SpotsFiltered=SpotsFiltered)
+		set(all_ObjectsType2=ObjectsType2)
+		//set(all_Haustoria=Haustoria)
+		set(all_Stomata=Stomata)
+		set(all_Gaps=Gaps)
+		push( StacksUsed, _StackCounter )
+	end()  // end of single stack / whole well contraint	
+	//	set(all_LeafCells=LeafCells) // The first evaluated field
+	//	set(all_SpotsFiltered=SpotsFiltered)
+	//	set(all_ObjectsType2=ObjectsType2)
+	//	//set(all_Haustoria=Haustoria)
+	//	set(all_Stomata=Stomata)
+	//	set(all_Gaps=Gaps)
+	//end()	  //end of loop over stacks
+	delete(wholecells)
+end() // end of the foreach loop over stacks
+if(all_VarsOK == 0)
+	set(all_LeafCells=LeafCells)
+	set(all_SpotsFiltered=SpotsFiltered)
+	set(all_ObjectsType2=ObjectsType2)
+	//set(all_Haustoria=Haustoria)
+	set(all_Stomata=Stomata)
+	set(all_Gaps=Gaps)
+end()
+
+
+
+// REPORTS SPOT DETECTION  OUTPUT PARAMETERS  
+if (InvalidStacks<=EndStack-StartStack) 
+	// At least one field was analysed and we have an object list
+	set(OP_NumberOfLeafCells = all_LeafCells.count)
+	set(OP_NumberOfSpots = all_SpotsFiltered.count)
+	//set(OP_NumberOfHaustoria = all_Haustoria.count)
+	set(OP_NumberOfStomata=all_Stomata.count)
+	set(OP_NumberOfGaps = all_Gaps.count)
+	set(OP_SpotAverageIntensity=all_SpotsFiltered.intensity.mean)
+	set(OP_SpotAverageArea=all_SpotsFiltered.area.mean)
+	set(OP_SpotTotalSignal=all_SpotsFiltered.IntegratedSpotSignal.sum)
+	set(OP_SpotTotalSignal_backgroundsubtracted=all_SpotsFiltered.IntegratedSpotSignal_backgroundsubtracted.sum)
+	set(OP_SpotAverageLength=all_SpotsFiltered.FullLength.mean)
+	set(OP_SpotAverageHalfWidth=all_SpotsFiltered.HalfWidth.mean)
+	set(OP_SpotAverageWidth2LengthRatio=all_SpotsFiltered.Width2LengthRatio.mean)
+	set(OP_SpotAverageWidth2LengthRatioStddev=all_SpotsFiltered.Width2LengthRatio.stddev)
+	set(OP_SpotAverageRoundness=all_SpotsFiltered.RoundnessCorrected.mean)
+	set(OP_SpotAverageRoundnessStddev=all_SpotsFiltered.RoundnessCorrected.stddev)
+	set(OP_SpotAverageContrast=all_SpotsFiltered.Contrast.mean)
+	set(OP_SpotAverageContrastStddev=all_SpotsFiltered.Contrast.stddev)
+	set(OP_SpotAveragePeakIntensity=all_SpotsFiltered.PeakIntensity.mean)
+	set(OP_TotalCellArea=all_LeafCells.SearchRegion_area.sum)
+	set(OP_TotalCellAreaStandardDeviation=all_LeafCells.SearchRegion_area.stddev)
+	
+	if(OP_NumberOfLeafCells>0)
+		set(OP_NumberOfSpotsPerCell=(1.0*OP_NumberOfSpots)/(1.0*OP_NumberOfLeafCells))
+	else()
+		set(OP_NumberOfSpotsPerCell=NAN)
+	end()
+	if(OP_TotalCellArea>0)
+		set(OP_NumberOfSpotsPerArea=(1.0*OP_NumberOfSpots)/(1.0*OP_TotalCellArea))
+		set(OP_SpotTotalSignalPerArea=(1.0*OP_SpotTotalSignal)/(1.0*OP_TotalCellArea))
+		set(OP_SpotTotalSignalPerArea_backgroundsubtracted=(1.0*OP_SpotTotalSignal_backgroundsubtracted)/(1.0*OP_TotalCellArea))
+		set(OP_AverageCellArea=(1.0*OP_TotalCellArea)/(1.0*OP_NumberOfLeafCells))
+	else()
+		set(OP_NumberOfSpotsPerArea=NAN)
+		set(OP_SpotTotalSignalPerArea=NAN)
+		set(OP_SpotTotalSignalPerArea_backgroundsubtracted=NAN)
+		set(OP_AverageCellArea=NAN)
+	end()
+	
+else()
+	// NO valid stacks
+	set(OP_NumberOfSpots = NAN)
+	set(OP_NumberOfLeafCells = NAN)
+	//set(OP_NumberOfHaustoria = NAN)
+	set(OP_NumberOfStomata=NAN)
+	set(OP_NumberOfGaps=NAN)
+	set(OP_NumberOfSpotsPerCell=NAN)
+
+	set(OP_SpotAverageIntensity= NAN)
+	set(OP_SpotAverageArea= NAN)
+	set(OP_SpotTotalSignal= NAN)
+	set(OP_SpotTotalSignal_backgroundsubtracted= NAN)
+	set(OP_SpotAverageLength= NAN)
+	set(OP_SpotAverageHalfWidth= NAN)
+	set(OP_SpotAverageWidth2LengthRatio= NAN)
+	set(OP_SpotAverageWidth2LengthRatioStddev= NAN)
+	set(OP_SpotAverageRoundness= NAN)
+	set(OP_SpotAverageRoundnessStddev= NAN)
+	set(OP_SpotAverageContrast= NAN)
+	set(OP_SpotAverageContrastStddev= NAN)
+	set(OP_SpotAveragePeakIntensity= NAN)
+	set(OP_TotalCellArea= NAN)
+
+	set(OP_NumberOfSpotsPerArea= NAN)
+	set(OP_SpotTotalSignalPerArea= NAN)
+	set(OP_SpotTotalSignalPerArea_backgroundsubtracted= NAN)
+end()
+
+// REPORTS ADDITIONAL OUTPUTS  
+set(OP_StackCount = StackCount) // Total number of image fields
+set(OP_ValidStacks = StackCount - InvalidStacks) // Number of Valid Image fields is determined
+
+set( vectorPos = 0 )
+if(all_LeafCells.count > 0)
+	ForEach(1..StackCount)
+		output( NumberOfCellsInStackVector[ vectorPos ], "Number of valid Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output( NumberOfSpotsInStackVector[ vectorPos ], "Number of valid Spots in Stack # " & StacksUsed[ vectorPos ] )
+		output( EntireNumberOfSpotsInStackVector[ vectorPos ], "Number of Spots in and out of Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output( PercentageOfValidSpotsVector[ vectorPos ], "Percents of inner Spots in Stack # " & StacksUsed[ vectorPos ] )
+		output( AverageAreaOfCellsInStackVector[ vectorPos ], "Average Area of Cells in Stack #" & StacksUsed[ vectorPos ] )
+		output( AverageAreaOfCellsInStackStddevVector[ vectorPos ], "Average Area of Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+		output( PercentageCellAreaInPictureVector[ vectorPos ], "Percents of found Cell Area in Stack # " & StacksUsed[ vectorPos ] )
+		output( AverageNumberOfSpotsPerCellVector[ vectorPos ], "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output( AverageNumberOfSpotsPerCellStddevVector[ vectorPos ], "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+		output( SpotsPerValidAreaVector[ vectorPos ], "Average Number of Spots per recognized Area in Stack # " & StacksUsed[ vectorPos ] )
+		set(vectorPos = vectorPos + 1 )
+	end()
+else()
+	ForEach(1..StackCount)
+		output(NAN,"Number of valid Cells in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Number of valid Spots in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Number of Spots in and out of Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output(NAN, "Percents of inner Spots in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Area of Cells in Stack #" & StacksUsed[ vectorPos ])
+		output(NAN, "Average Area of Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Percents of found Cell Area in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Number of Spots per recognized Area in Stack # " & StacksUsed[ vectorPos ])
+		set(vectorPos = vectorPos + 1 )
+	end()
+end()
+	
+
+//ForEach(NumberOfCellsInStackVector)
+//	output( i, "Number of Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(NumberOfSpotsInStackVector)
+//	output( i, "Number of Spots in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageAreaOfCellsInStackVector)
+//	output( i, "Average Area of Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageAreaOfCellsInStackStddevVector)
+//	output( i, "Average Area of Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageNumberOfSpotsPerCellVector)
+//	output( i, "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageNumberOfSpotsPerCellStddevVector)
+//	output( i, "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(NumberOfOuterSpotsInStackVector)
+//	output( i, "Number of Spots out of recognized Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(PercentageOfValidSpotsVector)
+//	output( i, "Percents of inner Spots in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(PercentageCellAreaInPictureVector)
+//	output( i, "Percents of found Cell Area in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+
+output(OP_NumberOfLeafCells, "Number of Leaf Cells in whole Well")
+if(all_LeafCells.count > 0)
+	output(all_LeafCells.SearchRegionArea.mean, "Average Cell Area in whole Well")
+	output(all_LeafCells.SearchRegionArea.stddev, "Average Cell Area in whole Well - Standard Deviation")
+else()
+	output(0, "Average Cell Area in whole Well")
+	output(0, "Average Cell Area in whole Well - Standard Deviation")
+end()
+output(OP_NumberOfSpots, "Number of Spots in whole Well")
+if(all_SpotsFiltered.count > 0)
+	output(all_LeafCells.NumberOfSpots.mean, "Average Number of Spots per Cell in whole Well")
+	output(all_LeafCells.NumberOfSpots.stddev, "Average Number of Spots per Cell in whole Well - Standard Deviation")
+else()
+	output(0, "Average Number of Spots per Cell in whole Well")
+	output(0, "Average Number of Spots per Cell in whole Well - Standard Deviation")
+end()
+output(OP_TotalCellArea, "Total Cell Area in Well")
+set(OP_PercentageValidStacks = (100 * (1.0 * OP_ValidStacks) / (1.0 * OP_StackCount)))
+if(OP_ValidStacks > 0)
+	set(PercentageOfTotalCellAreaOverAllValidStacks = (100 * (1.0 * all_LeafCells.SearchRegionArea.sum) / (1.0 * OP_ValidStacks * 357760)))
+else()
+	set(PercentageOfTotalCellAreaOverAllValidStacks = 0)
+end()
+output(PercentageOfTotalCellAreaOverAllValidStacks, "Percentage of total Cell Area in Well")
+
+//output(OP_NumberOfHaustoria, "Number of Haustoria")
+output(OP_NumberOfStomata, "Number Of Stomata")
+//Output(OP_NumberOfGaps, "Number Of gaps between leaf cells")
+
+//output(OP_NumberOfSpotsPerArea, "Number of spots per area")
+//output(OP_NumberOfSpotsPerCell, "Average Number of spots per cell")
+
+//output(OP_SpotTotalSignalPerArea, "Total integrated spot signal per area")
+//output(OP_SpotTotalSignalPerArea_backgroundsubtracted, "Total integrated spot signal per area background subtracted")
+
+output(OP_SpotAverageIntensity, "Average Intensity of Spots")
+output(OP_SpotAverageArea, "Average Area of Spots")
+//output(OP_SpotTotalSignal, "Total integrated spot signal, over all spots")
+//output(OP_SpotTotalSignal_backgroundsubtracted, "Total integrated spot signal background subtracted, over all spots")
+output(OP_SpotAverageLength, "Average Length of Spots")
+output(OP_SpotAverageHalfWidth, "Average Half Width of Spots")
+output(OP_SpotAverageWidth2LengthRatio, "Average Width to Length Ratio of Spots")
+output(OP_SpotAverageWidth2LengthRatioStddev, "Average Width to Length Ratio of Spots - Standard Deviation")
+output(OP_SpotAverageRoundness, "Average Roundness of Spots")
+output(OP_SpotAverageRoundnessStddev, "Average Roundness of Spots - Standard Deviation")
+output(OP_SpotAverageContrast, "Average Contrast of Spots")
+output(OP_SpotAverageContrastStddev, "Average Contrast of Spots - Standard Deviation")
+output(OP_SpotAveragePeakIntensity, "Average Peak Intensity of Spots")
+//if(StackNo<1)
+	//output(OP_AverageCellArea, "Average Cell Area")
+	//output(OP_TotalCellAreaStandard Deviation, "Total Cell Area Standard Deviation")
+//end()
+output(OP_StackCount, "Total number of Stacks analyzed in Well")
+output(OP_ValidStacks, "Number of valid Stacks in Well")    
+set(OP_PercentageValidStacks = (100 * (1.0 * OP_ValidStacks) / (1.0 * OP_StackCount)))
+output(OP_PercentageValidStacks, "Percentage of valid Stacks in Well")
+

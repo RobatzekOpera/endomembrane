@@ -1,0 +1,1986 @@
+//*************************************************************************
+//  File Name:			MPI_leaves_h_seba.script
+//  Purpose: Detects spot-like features on leaf images, images from MPIZ-Ko"ln
+//
+// 							EVOTEC  TECHNOLOGIES 
+//  						Olavi Ollikainen
+//  e-mail: 			Olavi.Ollikainen@evotec-technologies.com
+//	phone :			00 372 52 75 262
+//  With corrections from Kurt Stu"ber MPI Ko"ln
+//  phone:          +49 (0) 221 5062 120
+//  e-mail           stueber@mpiz-koeln.mpg.de
+//  With further modifications from Sebastian Schaaf MPIZ Ko"ln
+//  phone			+49 (0) 221 5062 323
+//	e-mail			schaaf@mpiz-koeln.mpg.de
+//*************************************************************************
+//
+// 				Output parameters:
+//													* Number of valid Cells in Stack
+//													* Number of valid Spots in Stack
+//													* Number of Spots in and out of Cells in Stack
+//													* Percents of inner Spots in Stack
+//													* Average Area of Cells in Stack
+//													* Average Area of Cells - Standard Deviation in Stack
+//													* Percents of found Cell Area in Stack
+//													* Average Number of Spots in Cells in Stack
+// 													* Average Number of Spots in Cells - Standard Deviation in Stack
+//													* Average Number of Spots per recognized Area in Stack
+//
+//													* Number of Leaf Cells in whole Well
+//													* Average Cell Area in whole Well
+//													* Average Cell Area in whole Well - Standard Deviation
+//													* Number of Spots in whole Well
+//   												* Average Number of Spots per Cell in whole Well
+//													* Average Number of Spots per Cell in whole Well - Standard Deviation
+//													* Total Cell Area in Well
+//													* Percentage of total Cell Area in Well
+//
+//													* Number Of Stomata
+//
+//													* Average Intensity of Spots
+//													* Average Area of Spots
+//													* Average Length of Spots
+//													* Average Half Width of Spots
+//													* Average Width to Length Ratio of Spots
+//													* Average Width to Length Ratio of Spots - Standard Deviation
+//													* Average Roundness of Spots
+//													* Average Roundness of Spots - Standard Deviation
+//													* Average Contrast of Spots
+//													* Average Contrast of Spots - Standard Deviation
+//													* Average Peak Intensity of Spots
+//
+//													* Total number of Stacks analyzed in Well
+//													* Number of valid Stacks in Well
+//													* Percentage of valid Stacks in Well
+//
+//*******************************************************************************************************************************
+
+
+
+/// Spot detection procedure. Finds spots on SpotImage. Spot candidates are detected as local intensity maximums. Thereupon the spots are selected by contrast and intensity parameters.
+/// formerly called Spot_Detection_C
+proc Spot_Detection_MPIZ(
+	image SpotImage in " image with intensity information. Spots are detected by this image.",
+	string SearchRegion="SearchRegion" in "Name of the attribute in input list WholeCells, which specifies the regions where spots are searched. In case of the empty string \"\" spots are searched over the whole SpotImage and the input object list is ignored.",
+	bool ShowIllustrations=YES in "YES- Output illustrations are depicted. No- Output illustrations are not shown.",
+	bool ShowSearchRegionBorder=NO in "YES- Output illustration with SearchRegion borders is depicted. No- Output illustration with SearchRegion borders is not shown.",
+	bool ShowOutputParameters=YES in "YES- Output parameters are reported. No- Output Parameters are not reported.",
+
+	objectlist WholeCells=none inout "Optional input object list, which defines the objects (e.g. ~cells) where the spots are searched. Output list contains numerical and geometrical spot attributes. Input list should involve the stencil-type attribute specified by the input SearchRegion. If the object list is not provided spots are searched over the whole image.",
+	objectlist SpotCandidates out "Output object list of spot candidates with calculated numerical and geometrical attributes.",
+	objectlist Spots out "Output object list of classified spots with calculated numerical and geometrical attributes.",
+
+	double NumberOfSpotCandidates out "Number of spot candidates.",
+	double NumberOfSpots out "Number of detected spots.",
+	double SpotsPerObject out "Number of spots per object (i.e. number of spots per ~cell).",
+	double SpotsPerArea out "Number of spots per SearchRegion area (i.e. number of spots per visible ~cell area).",
+	double IntegratedSpotSignalPerCellularSignal out "Integrated spot signal over all spots normalized by integrated ~cellular signal (total signal over all SearchRegion area).",
+	double IntegratedSpotSignalPerCellularSignal_BackgroundSubtracted out "Integrated spot signal over all spots background subtracted and normalized by integrated ~cellular signal (total signal over all SearchRegion area).",
+
+	double IntegratedSpotSignalPerArea out "Integrated spot signal per SearchRegion area (per visible ~cell area).",
+	double IntegratedSpotSignalPerArea_BackgroundSubtracted out "Integrated spot signal BackgroundSubtracted per SearchRegion area (per visible ~cell area)."
+
+) spot detection, object recognition "Spot detection procedure. Finds spots on SpotImage. Spot candidates are detected as local intensity maximums. Thereupon the spots are selected by contrast and intensity parameters. Proper spot detection input parameters can be found with the template script spot_detection_parameter_scanner.script (spot_detection_parameter_scanner_Acapella10.script for Acaplella 1.0). Opera multiple field spot images can be evaluated based on the template script Opera_multifields_spots.script. See more in Opera spot detection manual."
+{
+	input(SpotMinimumDistance,3.0 , "SpotMinimumDistance","d", "Minimum allowed distance between two spot centers. Unit image pixel. Typical range 2.0 .. 5.0. Adjust by Illustration SpotSelection and Spots.") 
+	input(SpotPeakRadius, 1.0, "SpotPeakRadius","d", "Radius of the disk, where the spot peak intensity is calculated. Default value 0 means that peak intensity corresponds to the intensity of the maximum point, value 1 means that peak intensity is found as average intensity over the region with radius 1 pixel around the maximum point, i.e. over the region with area 5 pixels. Typically 0 or 1.")                                                                                                                                                      
+	input(SpotReferenceRadius, 8.0,  "SpotReferenceRadius", "d", "Radius of Reference Region around the intensity maximum, i.e. around spot center. Typical range  2.0 .. 5.0.")	
+	input(SpotMinimumContrast,0.4, "SpotMinimumContrast", "d","Minimum allowed contrast between spot peak intensity and the reference intensity. The main spot selection parameter. Range from 0..1. Adjust parameter by illustrations  and Spots. If the parameter value is lowered the number of classified spots increases and vice versa.")
+	input(SpotMinimumToCellIntensity, 1.0, "SpotMinimumToCellIntensity","d","Minimum allowed intensity ratio between Spot Peak Intensnity and the Average Intensity of the cell/object to which the spot is belongs. Range from 0..oo. Has smaller influence on the outputs than the main selection parameter SpotMinimumContrast. Adjust parameter by illustrations SpotSelection and Spots. If the parameter value is lowered the number of classified spots increases and vice versa.") 
+	
+	if( SearchRegion!="" and defined("WholeCells"))
+		set(Objects_in=WholeCells)
+		if(!defined("WholeCells." & SearchRegion))
+			error("Procedure Spots_Detection_C() input attribute SearchRegion " & SearchRegion & " does not exist. The input SearchRegion should correspond to the stencyl-type attribute in the input object list or to be an empty string \"\". The empty string means that spots are searched over the whole image and the input object list is ignored.")
+		else()
+			eval("set(SearchMask=WholeCells." & SearchRegion & ")")
+			if (SearchMask.class!="intervalvector")
+				error("Procedure Spots_Detection_C() input attribute SearchRegion " & SearchRegion & " is not a stencil. The input SearchRegion should correspond to the stencyl-type attribute in the input object list or to be an empty string \"\". The empty string means that spots are searched over the whole image and the input object list is ignored.")
+			end()
+		end()
+		set(SearchObjects=WholeCells)
+	end()
+	
+	if (ShowIllustrations==Yes)
+		spot_illustrations_1()
+	end()
+	
+	Spot_Detection_C_inner() // Spot detection
+
+	if(ShowIllustrations)
+		spot_illustrations_2()
+		set(printf_text="Spot detection C. Number of Spot Candidates: " & SpotCandidates.count & "; Number Classified Spots: " & spots.count & "; Discarded by Contrast: " & NumberDiscradedByContrast & "; Discarded by SpotToCellIntensity: " & NumberDiscradedBySpotToCellIntensity & "\n")
+		printf(printf_text)
+	end()
+	set(NumberOfSpotCandidates=SpotCandidates.count)
+	set(NumberOfSpots=Spots.count)
+	if(ShowOutputParameters)
+		create_spot_outputs()
+	end()
+	set(printf_text="Spot detection C. Number of Spot Candidates: " & NumberOfSpotCandidates & "; Number Classified Spots: " & NumberOfSpots & "; Spots per cell/object: " & SpotsPerObject & "; Spot per area: " & SpotsPerArea & "; Integrated Spot Signal Per Cellular Signal: " & IntegratedSpotSignalPerCellularSignal & "\n")
+	printf(printf_text)
+}
+
+
+//////////////////////////////////////////////////////////// PROCEDURES
+proc CalcNodesLarge( string SkeletonName="skeleton" in "Stencil in input list,  Nodes are found for this stencil", 
+objectlist objects inout "Input-output object list") "Adds to object list a stencil-type attribute LargeNodes"
+{
+	if(!defined("objects." & SkeletonName))
+		error("Error. Input stencil " & SkeletonName & " is not defined. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+	else()
+		eval("set(IfIntervalVector=Objects." & SkeletonName & ".class==\"intervalvector\")")
+		if(!IfIntervalVector)
+			error("Error. The attribute  " & SkeletonName & " given by the input SkeletonName is not a stencil. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+		end()
+	end()
+	set(ob_in=objects)
+	eval("setattr(stencil_temp,objects." & SkeletonName & ")")
+
+	set(IM_skeleton=objects.stencil_temp.mask.image)
+	
+	blank(3,3,1)
+	set(kernel0=image)
+	set(kernel0[0,0]=0, kernel0[2,2]=0,  kernel0[0,2]=0, kernel0[2,0]=0)
+
+	set(kernel1=kernel0)
+	set(kernel1[1,0]=0)
+	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel1.vector)
+	set(image.factor=1)
+	mask(4,image=image)
+	set(M_nodeslarge1=mask.image)
+	
+	set(kernel2=kernel0)
+	set(kernel2[2,1]=0)
+	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel2.vector)
+	set(image.factor=1)
+	mask(4,image=image)
+	set(M_nodeslarge2=mask.vector)
+	
+	set(kernel3=kernel0)
+	set(kernel3[1,2]=0)
+	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel3.vector)
+	set(image.factor=1)
+	mask(4,image=image)
+	set(M_nodeslarge3=mask.vector)
+	
+	set(kernel4=kernel0)
+	set(kernel4[0,1]=0)
+	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel4.vector)
+	set(image.factor=1)
+	mask(4,image=image)
+	set(M_nodeslarge4=mask.vector)
+	
+	carrypixels(image=M_nodeslarge1,mask=M_nodeslarge2,data=1)
+	carrypixels(image=image,mask=M_nodeslarge3,data=1)
+	carrypixels(image=image,mask=M_nodeslarge4,data=1)
+	
+	calcnodes(stencil_temp)
+	carrypixels(image=image,mask=objects.stencil_temp_nodes,data=1)
+	and(image=objects.stencil_temp.image, mask=image)
+	eval("setattr(" & SkeletonName & "_LargeNodes,image.vector, objects=ob_in)")
+}
+
+
+///////////////////////////////////////////////////////////////////////////////
+proc CalcSkeletonBranches(
+string SkeletonName="skeleton" in "Stencil-type attribute on which the  skeleton branches are found.",
+string DeadEndStencil="deadend" in "Stencil-type attribute, which corresponds to DeadEnd tips",
+objectlist objects inout "Input-output object list with the stencil-type attribute on which the branches are found. Input list must include also a stencil, which coresponds to dead end tips.",
+objectlist Branches out "Output object list of Branch lines on the skeleton between nodes.  " 
+) "Finds skeleton branches between nodes. Outputs object list of skeleton branches"
+{
+	set(ob_in=objects)
+	if(!defined("objects." & SkeletonName))
+		error("Error. Input stencil " & SkeletonName & " is not defined. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+	else()
+		eval("set(IfIntervalVector=Objects." & SkeletonName & ".class==\"intervalvector\")")
+		if(!IfIntervalVector)
+			error("Error. The attribute  " & SkeletonName & " given by the input SkeletonName is not a stencil. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+		end()
+	end()
+
+	if(!defined("objects." & DeadEndStencil))
+		error("Error. Input stencil " & DeadEndStencil & " is not defined. Input DeadEndStencil should correspond to the existing stencil-type attribute in the input object list.")
+	else()
+		eval("set(IfIntervalVector=Objects." & DeadEndStencil & ".class==\"intervalvector\")")
+		if(!IfIntervalVector)
+			error("Error. The attribute  " & DeadEndStencil & " given by the input DeadEndStencil is not a stencil. Input DeadEndStencil should correspond to the existing stencil-type attribute in the input object list.")
+		end()
+	end()
+
+	eval("setattr(skeleton,ob_in." & SkeletonName & ")")
+	eval("setattr(DeadEnd,ob_in." & DeadEndStencil & ")")
+
+	calcnodeslarge(SkeletonName="skeleton")
+	
+	convolutionmask("disk",1)
+	convolution(image=objects.skeleton_largenodes.mask.image, mask=objects.skeleton.mask,faster=yes)
+	set(image.factor=1)
+	mask(1)
+	set(nodes_surrounding=mask)
+	set(ob2=objects)
+	carrypixels(image=objects.skeleton.mask.image,mask=nodes_surrounding.vector,data=0)
+	set(M_connections=image)
+	
+	mask2stencil(M_connections, Neighbourhood=8)
+	stencil2objects()
+	
+	and(image=objects.body.image, mask=ob2.deadend.mask.image)
+	setattr(deadend, image.vector)
+	calcarea()
+	calcarea(deadend)
+	carrypixels(image=ob2.skeleton.image, mask=ob2.skeleton_largenodes, data=0)
+	calczone(1, stencil=image.vector)
+	zonemask(-1,oo)
+	renameattr(Branches=zonemask)
+	calcarea(Branches)
+	Set(Branches=objects)
+	and(image=ob2.skeleton.image,mask=Branches.body.mask.image)
+	Setattr(Branches,image.vector,objects=ob_in)
+	Setattr(Nodes,ob2.skeleton_LargeNodes)
+	Setattr(DeadEnd,ob2.skeleton_DeadEnd)
+	Setattr(DeadEnd_type1,ob2.skeleton_DeadEnd_type1)
+	Setattr(DeadEnd_type2,ob2.skeleton_DeadEnd_type2)
+}
+
+
+proc CalcDeadEndTypes(
+string SkeletonName="skeleton" in "Stencil-type attribute, which corresponds to skeleton",
+objectlist objects inout "Input-output object list"
+) "Finds the deadend tips in the skeleton"
+{
+	set(ob_in=objects)
+	if(!defined("objects." & SkeletonName))
+		error("Error. Input stencil " & SkeletonName & " is not defined. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+	else()
+		eval("set(IfIntervalVector=Objects." & SkeletonName & ".class==\"intervalvector\")")
+		if(!IfIntervalVector)
+			error("Error. The attribute  " & SkeletonName & " given by the input SkeletonName is not a stencil. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+		end()
+	end()
+	eval("setattr(skeleton,ob_in." & SkeletonName & ")")
+
+	set(IM_skeleton=objects.skeleton.mask.image)
+	not(image=IM_skeleton)
+	set(IM_skeleton_not=image)
+	//set(IM_skeleton_vec=objects.skeleton_skeleton.mask)
+	//calcnodes(skeleton)
+	CalcNodesLarge(SkeletonName="skeleton")
+	
+	convolutionmask("ribbon",1, 1)
+	set(ConvolutionKernel_4n=ConvolutionKernel)
+	convolution(image=objects.skeleton_largenodes.mask.image,mask=objects.skeleton, faster=yes)
+	set(image.factor=1)
+	mask(1,image=image)
+	set(M_nodes_4n=mask.vector)
+	
+	convolutionmask("ribbon",1.5, 1)
+	set(ConvolutionKernel_8n=ConvolutionKernel)
+	
+	convolution(image=IM_skeleton,mask=objects.skeleton, faster=yes)
+	set(image.factor=1)
+	set(IM_convolution_8n=image)
+	mask(1,image=image)
+	
+	set(M1=mask.image)
+	mask(2,image=image)
+	set(M2=mask.image)
+	
+	carrypixels(image=m1,mask=M2.vector,data=0)
+	set(M_deadend0=image.vector)
+
+	convolution(image=objects.skeleton_largenodes.mask.image,mask=M_deadend0, faster=yes)
+	set(image.factor=1)
+	mask(1,image=image)
+	set(M_deadend_type1=image.vector)
+	
+	//carrypixels(image=M_deadend0.image,mask=M_deadend_type1.vector,data=0)
+	//set(M_deadend0=image.vector)
+	////////////////////////////////////////////////////////////////////
+	blank(3,3,1)
+	set(IM1=image)
+	
+	carrypixels(image=M_nodes_4n.image, mask=M_deadend0,data=0)
+	set(M_nodes_4n_mod=image.vector)
+	
+	set(kernel1=IM1)
+	set(kernel1[2,0]=0,kernel1[2,1]=0, kernel1[2,2]=0, kernel1[1,1]=0)
+	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel1.vector)
+	set(image.factor=1)
+	mask(5,image=image)
+	set(M_deadend1=mask.image)
+	
+	set(kernel2=IM1)
+	set(kernel2[0,0]=0,kernel2[0,1]=0, kernel2[0,2]=0, kernel2[1,1]=0)
+	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel2.vector)
+	set(image.factor=1)
+	mask(5,image=image)
+	set(M_deadend2=mask.image)
+	
+	set(kernel3=IM1)
+	set(kernel3[0,0]=0,kernel3[1,0]=0, kernel3[2,0]=0, kernel3[1,1]=0)
+	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel3.vector)
+	set(image.factor=1)
+	mask(5,image=image)
+	set(M_deadend3=mask.image)
+	
+	set(kernel4=IM1)
+	set(kernel4[0,2]=0,kernel4[1,2]=0, kernel4[2,2]=0, kernel4[1,1]=0)
+	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel4.vector)
+	set(image.factor=1)
+	mask(5,image=image)
+	set(M_deadend4=mask.image)
+	
+	or(image=M_deadend1,mask=M_deadend2)
+	or(image=image,mask=M_deadend3)
+	or(image=image ,mask=M_deadend4)
+	or(image=image,mask=M_deadend_type1.image)
+	set(M_deadend_type1=image)
+	carrypixels(image=M_deadend0.image, mask=M_deadend1.vector, data=0)
+	set(M_deadend_type2=image)
+	or(image=M_deadend_type1.image, mask=M_deadend_type2.image)
+	set(M_deadend=image)
+	set(ob2=objects)
+
+	eval("setattr(" & SkeletonName & "_LargeNodes,ob2.skeleton_LargeNodes, objects=ob_in)")
+
+	and(image=ob2.skeleton.image, mask=M_deadend.image)
+	eval("setattr(" & SkeletonName & "_DeadEnd,image.vector)")
+	
+	and(image=ob2.skeleton.image, mask=M_deadend_type1.image)
+	eval("setattr(" & SkeletonName & "_DeadEnd_type1,image.vector)")
+	
+	and(image=ob2.skeleton.image, mask=M_deadend_type2.image)
+	eval("setattr(" & SkeletonName & "_DeadEnd_type2,image.vector)")
+}
+
+
+proc RemoveSkeletonLayer(
+string SkeletonName="skeleton" in "Stencil-type attribute, which corresponds to skeleton",
+int MinimumArea=10 in "DeadEnd skeleton branches with area less than the limit are discarded",
+objectlist objects inout "Input-output object list"
+) "Discards from skeleton the DeadEnd branches with area less than the limit MinimumArea"
+{
+	set(ob_in=objects)
+	if(!defined("objects." & SkeletonName))
+		error("Error. Input stencil " & SkeletonName & " is not defined. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+	else()
+		eval("set(IfIntervalVector=Objects." & SkeletonName & ".class==\"intervalvector\")")
+		if(!IfIntervalVector)
+			error("Error. The attribute  " & SkeletonName & " given by the input SkeletonName is not a stencil. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+		end()
+	end()
+	eval("setattr(skeleton,ob_in." & SkeletonName & ")")
+
+	CalcDeadEndTypes(SkeletonName="skeleton")
+	carrypixels(image=objects.skeleton.image,mask=objects.skeleton_DeadEnd_type1.mask,data=0)
+	setattr(skeleton_mod,image.vector)
+	
+	///////////////////////////////////////////////////////////////////////////////////////////
+	set(ob2=objects)
+	CalcSkeletonBranches(SkeletonName="skeleton_mod", deadendstencil="skeleton_DeadEnd_type2")
+	ObjectFilter(MinimumArea>Branches_area and deadend_area>0, objects=Branches)
+	carrypixels(image=ob2.skeleton_mod.image,mask=objects.Branches.mask,data=0)
+	set(BranchesRemoved=objects)
+	setattr(skeleton_LayerRemoved,image.vector, objects=ob2)
+	and(image=ob_in.body.image, mask=BranchesRemoved.Branches.mask.image)
+	setattr(skeleton_RemovedBranches,image.vector)
+	set(ob3=objects)
+	
+	eval("setattr(" & SkeletonName & "_LargeNodes,ob3.skeleton_LargeNodes, objects=ob_in)")
+	eval("setattr(" & SkeletonName & "_DeadEnd, ob3.skeleton_DeadEnd)")
+	eval("setattr(" & SkeletonName & "_DeadEnd_type1, ob3.skeleton_DeadEnd_type1)")
+	eval("setattr(" & SkeletonName & "_DeadEnd_type2, ob3.skeleton_DeadEnd_type2)")
+	eval("setattr(" & SkeletonName & "_LayerRemoved,  ob3.skeleton_LayerRemoved)")
+	eval("setattr(" & SkeletonName & "_RemovedBranches,  ob3.skeleton_RemovedBranches)")
+}
+
+
+proc SkeletonBranchesNodes(
+string SkeletonName="skeleton" in "Stencil-type attribute, which corresponds to skeleton",
+objectlist objects inout "Input-output object list",
+objectlist Branches out "Output object list of skeleton branches",
+objectlist Nodes out "Output object list of nodes"
+//int MinimumArea=20 in "DeadEnd skeleton branches with area less than the limit are discarded"
+) "Finds Brances and Nodes of skeleton. Outputs object lists of the found Branches and Nodes. In addition adds to the input list attributes branches and nodes."
+{
+	set(ob_in=objects)
+	if(!defined("objects." & SkeletonName))
+		error("Error. Input stencil " & SkeletonName & " is not defined. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+	else()
+		eval("set(IfIntervalVector=Objects." & SkeletonName & ".class==\"intervalvector\")")
+		if(!IfIntervalVector)
+			error("Error. The attribute  " & SkeletonName & " given by the input SkeletonName is not a stencil. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
+		end()
+	end()
+	eval("setattr(skeleton,ob_in." & SkeletonName & ")")
+
+	CalcDeadEndTypes(SkeletonName="skeleton")
+	carrypixels(image=objects.skeleton.image,mask=objects.skeleton_DeadEnd_type1.mask,data=0)
+	setattr(skeleton_mod,image.vector)
+	
+	///////////////////////////////////////////////////////////////////////////////////////////
+	set(ob2=objects)
+	CalcSkeletonBranches(SkeletonName="skeleton_mod", deadendstencil="skeleton_DeadEnd_type2")
+	set(ob2=objects)
+	mask2stencil(objects.nodes)
+	stencil2objects()
+	set(Nodes=objects)
+	eval("setattr(" & SkeletonName & "_Nodes,ob2.Nodes, objects=ob_in)")
+	eval("setattr(" & SkeletonName & "_Branches,ob2.Branches)")
+	eval("setattr(" & SkeletonName & "_DeadEnd,ob2.DeadEnd)")
+	eval("setattr(" & SkeletonName & "_DeadEnd_type1,ob2.DeadEnd_type1)")
+	eval("setattr(" & SkeletonName & "_DeadEnd_type2,ob2.DeadEnd_type2)")
+}
+
+
+/////////////////////// Fills small holes
+proc FillSmallHoles(
+int minimumholearea=20 in "Minimum area for holes. Holes with area less than the limit are filled",
+objectlist objects inout "Input-output object list. Attributes in the input list are lost."
+) "Fills small holes in objects. Holes with area less than the limit MinimumHoleArea are filled."
+{
+	set(ob_in=objects)
+	fillobjects()
+	set(ob01=objects)
+	carrypixels(image=ob01.body.image,mask=ob_in.body.mask,data=0)
+	stencil2mask(image.vector)
+	mask2stencil()
+	stencil2objects()
+	calcarea()
+	objectfilter(minimumholearea<=area)
+	
+	carrypixels(image=ob01.body.image,mask=objects.body.mask,data=0)
+	stencil2objects(image.vector)
+	xor(image=objects.body.image,mask=ob_in.body.mask.image)
+	setattr(filled, image.vector)
+} 
+
+
+proc ImageSubRegions(
+int ImageWidth in,
+int ImageHeight in,
+int NumberOfLinearDivision in,
+objectList objects out
+)
+{
+	set(w0=int((1.0*ImageWidth)/(2.0*NumberOfLinearDivision)))
+	set(h0=int((1.0*ImageHeight)/(2.0*NumberOfLinearDivision)))
+	set(w1=2*w0, h1=2*h0)
+	blank(ImageWidth, ImageHeight)
+	set(image.type="mask")
+
+	foreach(0..NumberOfLinearDivision-1	)
+		foreach(0..NumberOfLinearDivision-1,"j")
+			set(image[w0+i*w1, h0+j*h1]=1)
+		end()
+	end()
+	mask2stencil(image)
+	stencil2objects()
+	set(eros_dist=w0+h0)
+	calcerosion(-eros_dist)
+} 
+
+proc DataCubeProjectionCorrection(
+int FirstZPlane in,
+int LastZPlane in,
+datacube datacube inout,
+image IM_planeNumber out,
+image PlaneNUmberImage out
+) [hidden]
+{
+	////// Projects maximum intensity for each x-y position from datacube to image
+	Maximums3D(0,image=datacube)
+	StencilFrom3DTo2D(stencil=maximums,datacube=datacube) //Projects the found maximums from 3-dim to plane
+	set(IM_plane=PlaneNumberImage)
+	//delete(datacube) 
+	convolutionmask("ribbon",7.9,7)
+
+	convolution(image=valueimage)
+	minus(valueimage,image,neg_method="zero", result_type="unsigned,short")
+	set(r4=result)
+	mask(1, image=result,userealvalues=no)
+	set(M_bright2=mask)
+
+	mask(result.mean, image=r4)
+
+	and(image=M_bright2.image, mask=mask.image)
+	set(M_bright3=image)
+
+	mask2stencil(M_bright3)
+	if(stencil.itemcount>31999)
+		ReduceStencilObjectsByAreaTo31999_MPIZ()
+	end()
+	stencil2objects()
+
+	CalcSkeletonByIntensity(image=r4)
+	CalcSkeletonByIntensity(skeleton, image=r4, IntensityEvalParam=-10)
+	CalcSkeletonByIntensity(skeleton_skeleton, image=r4, IntensityEvaluationMode=2, IntensityEvalParam=-4)
+	CalcSkeletonByIntensity(skeleton_skeleton_skeleton, image=r4, IntensityEvaluationMode=2, IntensityEvalParam=-20)
+	CalcSkeleton(skeleton_skeleton_skeleton_skeleton)
+	RenameAttr(Skeleton=skeleton_skeleton_skeleton_skeleton)
+	CalcArea(Skeleton)
+	set(Skeleton=objects)
+	ObjectFilter(Skeleton_area>10)
+	SkeletonBranchesNodes(skeletonName="skeleton")
+
+	Set(OL4=objects)
+	set(objects=branches)
+	ObjectFilter(area>10)
+	Set(OL7=objects)
+
+	ImageSubRegions(r4.width, r4.height,4)
+
+	And(Image=objects.eroded.image, mask=OL7.body.mask.image)
+	clearborders(image,9)
+	SetAttr(skeleton, stencil.vector)
+	CalcStat("quantile",0.7, stencil=skeleton, image=r4)
+	ThreshMask(stencil=skeleton,threshold=quantile,image=r4)
+	CalcStat("median",stencil=threshmask, image=PlaneNumberImage)
+	//CalcStat("Median",stencil=skeleton, image=PlaneNumberImage)
+	CarryObjects(image=objects.eroded.image, stencil=objects.eroded, data=objects.median)
+	//
+	//enlarge(1,image=image)   // AK 3.12.2007
+	redimension(image.width + 2, image.height + 2, 1, 1) // AK 3.12.2007
+	stencil2objects(image)
+	calcerosion(-2)
+
+	set(temp=objects.eroded.image)
+	crop(1,1,temp.width-1, temp.height-1,image=temp)
+	mean(31,image=image)
+	set(IM_PlaneNumber=Image)
+
+	delete(objects)
+	set(objects=OL7)
+	calcIntensity(body,image=r4)
+	calcstat("max",stencil=body,image=r4)
+	calcstat("Quantile",0.5,stencil=body,image=r4)
+
+	Threshmask(threshold=quantile,stencil=body,image=r4)
+	Calcintensity(Threshmask,image=r4)
+	//Calcstat("mean",stencil=threshmask,attrname="planeNumberMean", image=PlaneNumberImage)
+	Calcstat("median",stencil=body,attrname="planeNumberMean", image=PlaneNumberImage)
+	Calcerosion(-3)
+
+	CarryObjects(image=objects.eroded.image, stencil=objects.eroded, data=objects.max)
+	set(IM_intensity=Image)
+	maximums(20, mask=M_bright3.vector,image=r4)
+	set(max1=maximums)
+	maximums(70, mask=M_bright3.vector,image=r4)
+	set(max2=maximums)
+	or(image=max1.mask.image,mask=max2.mask.image)
+	and(image=objects.eroded.image,mask=image)
+	setattr(max1,image.vector)
+	calcarea(max1)
+
+	objectfilter(max1_area>0)
+	Calcerosion(-100,eroded,numberofsteps=20)
+	CarryObjects(image=objects.eroded.image, stencil=objects.eroded_eroded, data=objects.planeNumberMean)
+	set(IM_intensity2=Image)
+	//CarryObjects(image=objects.eroded.image, stencil=objects.eroded_eroded, data=objects.max)
+	//set(IM_max=Image)
+	//CarryObjects(image=objects.eroded_eroded.image, stencil=objects.eroded_eroded, data=objects.planeNumberMean)
+	//set(IM_planeNumberMean=Image)
+	set(OL5=objects)
+
+
+	and(image=objects.body.image,mask=max2.mask.image)
+	setattr(max2,image.vector)
+	calcarea(max2)
+	objectfilter(max2_area>0)
+	calcerosion(-10,max2,restrictivestencil=M_bright3,numberofsteps=2)
+	and(image=objects.max2_eroded.image,mask=skeleton.skeleton.mask.image)
+	setattr(skeleton1,image.vector)
+	Calcintensity(skeleton1,image=PlaneNumberImage)
+	CalcAttr(planenumber,round(skeleton1_intensity))
+	//CalcAttr(planenumber,iif(planenumber>10, planenumber-10, 1))
+	calcerosion(-100,max2_eroded,restrictivestencil=M_bright3,numberofsteps=20)
+	calcerosion(-200,max2_eroded_eroded,numberofsteps=20)
+	//CarryObjects(image=objects.max2_eroded_eroded_eroded.image, stencil=objects.max2_eroded_eroded_eroded, data=objects.planenumber)
+	//set(IM_planeNumberMean=Image)
+
+
+	set(i=FirstZplane, i2=0)
+	foreach(FirstZplane..LastZplane)
+		set(threshold2=i2+1)
+		minus(threshold2,IM_planeNumber,neg_method="abs",result_type="unsigned,short")
+		mask(threshold=8,image=result)
+		carrypixels(image=DataCube[i2],mask=mask.vector,data=0)
+		set(DataCube[i2]=image)
+		set(i2=i2+1)
+	end()
+
+}
+
+//proc ReduceStencilObjectsTo31999_tech(
+//stencil stencil inout "Input-output stencil, which object number will be reduced to fit the limit 31999. Only the first 31999 objects are taken into account and the others are discarded."
+//) [hidden]
+//{
+//	set(temp=stencil.vector.mask.image)
+//	blank(temp.width, temp.height)
+//	convelems(image, "integer", 2,"unsigned")
+//	append(avector,1..31999)
+//	create("vector","unsigned,int", stencil.itemcount-31999,0)
+//	append(avector,vector)
+//	carryobjects(image=result,stencil=stencil,data=avector)
+//	set(image.type="stencil")
+//	set(stencil=image.vector)
+//}
+
+
+proc ReduceStencilObjectsByAreaTo31999_MPIZ(
+stencil stencil inout "Input-output stencil, which object number will be reduced to fit the limit 31999. Only the first 31999 objects are taken into account and the others are discarded."
+) [hidden]
+
+{
+	set(alimit=32000)
+	set(alimit2=alimit-1)
+	eval("WarningFilter(disable=\"[Mask2Stencil]\")")
+	Removes_OnePixel_Objects(stencil.vector.MASK)
+	mask2stencil()
+	if(stencil.itemcount<alimit)
+		return()
+	end()
+	
+	set(mask_in=mask)
+	set(temp=stencil.vector.mask.image)
+	blank(temp.width, temp.height)
+	convelems(image, "integer", 2,"unsigned")
+	
+	append(bvector,1..alimit2)
+	set(avector=bvector)
+	set(stencil_in=stencil)
+	while(stencil.itemcount>alimit2)
+		set(stencil2=stencil)
+		create("vector","unsigned,int", stencil.itemcount-alimit2,0)
+		append(avector,vector)
+		carryobjects(image=result,stencil=stencil,data=avector)
+		set(image.type="stencil")
+		set(stencil=image.vector)
+		stencil2objects()
+		calcarea()
+		if(defined("v_area"))
+			append(v_area,objects.area)
+		else()
+			set(v_area=objects.area)
+		end()
+		push(v_objects,objects)
+		carrypixels(image=stencil2.image,mask=objects.body.mask, data=0)
+		mask2stencil(image.vector.mask)
+		
+	end()
+	stencil2objects()
+	calcarea()
+
+	append(v_area,objects.area)
+	sort(v_area,yes)
+	set(minarea=result[alimit2]+1)
+	objectfilter(area<minarea)
+	carrypixels(image=mask_in,mask=objects.body,data=0)
+	foreach(v_objects)
+		set(objects=i)
+		objectfilter(area<minarea)
+		carrypixels(image=image,mask=objects.body,data=0)
+	end()
+	mask2stencil(image)
+	if(stencil.itemcount>31999)
+		ReduceStencilObjectsTo31999_tech()
+	end()	
+}
+
+proc CreateDataCubeWithControl( 
+table sourcedata inout,
+int FirstZPlane in, 
+int LastZPlane in,
+int MinStdDev in,
+DataCube DataCube out,
+int newFirstZplane out,
+int newLastZplane out
+)
+{
+	//set( logfilename = "D:/dmeyer/test/filenames.txt" )
+	set( Zplane = FirstZplane )
+	//write( "flex\t" & imagefilename1, logfilename, "ascii", append=true )
+	//write( "\tFirstZplane\t" & FirstZplane, logfilename, "ascii", append=true )
+	//write( FirstZplane, logfilename, "ascii", append=true )
+	//write( "\tLastZplane\t" & LastZplane, logfilename, "ascii", append=true )
+	//write( LastZplane, logfilename, "ascii", append=true )
+	
+	
+	////// Creates a datacube
+	set(CubeDepth=LastZplane-FirstZplane+1)
+	create("datacube",sourcedata.SourceImage[0].width,sourcedata.sourceImage[0].height,CubeDepth, "unsigned short")
+	set(FirstZplane_in=FirstZplane, LastZplane_in=LastZplane)
+	set(i=FirstZplane, i2=0)
+	// find new FirstZplane and LastZplane discarding featureless images:
+	set( is_empty="true")
+	set( newFirstZplane = FirstZplane)
+	foreach(FirstZplane..LastZplane)
+		if( sourcedata.sourceImage[i-1].stddev < MinStdDev )
+			if( is_empty == "true")
+				set( newFirstZplane = i )
+			end()
+		else()
+			set( is_empty= "false" )
+		end()
+	end()
+	set( is_empty="true")
+	set( i=LastZplane)
+	set( newLastZplane = LastZplane)
+	foreach(LastZplane..FirstZplane)
+		if( sourcedata.sourceImage[i-1].stddev < MinStdDev )
+			if( is_empty == "true")
+				set( newLastZplane = i )
+			end()
+		else()
+			set( is_empty= "false" )
+		end()
+	end()
+	set( FirstZplane = newFirstZplane)
+	set( LastZplane = newLastZplane)
+	
+	if( LastZplane <FirstZplane )
+		set(LastZPlane=FirstZPlane)
+		return()
+		//stop(1, "Stack out of focus, program execution stopped" )
+	end()
+	
+	//write( "\tnew FirstZplane = " & FirstZplane, logfilename, "ascii", append=true)
+	//write( "\tnew LastZplane = " & LastZplane, logfilename, "ascii", append=true)
+	
+	set(i=FirstZplane, i2=0)
+	foreach(FirstZplane..LastZplane)
+		set(datacube[i2]=sourcedata.sourceImage[i-1])
+		set(i2=i2+1)
+	end()
+	foreach(FirstZplane_in..LastZplane_in)
+		delete(sourcedata.sourceImage[i-1])
+	end()
+}
+
+
+
+proc LeafCellsDetection(
+image image1 in "Input image with intensity information. Leaf cells are detected by this image",
+bool showillustrations=yes in,
+ObjectList LeafCells out "output list of leaf cells",
+ObjectList BigLeafCells out "output list of big leaf cells",
+objectlist Lines out "List of line structure",
+)
+{
+	thresholdxx(4,image=Image1)
+	mean(image=image1)
+	mask(threshold,image=image)
+	set(M_bg=mask)
+	blank(image1.width, image1.height,1)
+	
+	set(image.type="mask")
+	carrypixels(image=image,mask=M_bg.vector,data=0)
+	set(M_bg2=image)
+	
+	blank(image1.width, image1.height,0)
+	set(image.type="mask")
+	set(IM_blank=image)
+	set(image[1,1]=1, image[image1.width-2,1]=1, image[image1.width-2,image1.height-2]=1, image[1,image1.height-2]=1)
+	
+	mask2stencil(image)
+
+	stencil2objects()
+	calczone(50)
+	zonemask(-50,oo)
+	and(image=objects.zonemask.image,mask=M_bg2)
+	setattr(M_bg3,image.vector)
+	calcarea(M_bg3)
+	objectfilter(M_bg3_area>800)
+	set(ErosionDistance=sqrt(image.width*image.width+image.height*image.height))
+	set(NUmberOfSteps=round(ErosionDistance/3)-1)
+	calczone(ErosionDistance,stencil=M_bg2)
+	zonemask(-ErosionDistance)
+	CalcFillStencil_MPIZ(stencilname="zonemask")
+	renameattr(zonemask=zonemask_filled)
+	calcarea(zonemask)
+	objectfilter(zonemask_area>10000)
+	
+	set(OL_erase=objects)
+
+	////// Creates initial mask of lines
+	Bright_mask(image1,27)
+	mask2stencil(M_bright)//, Neighbourhood=25)
+	if(stencil.itemcount>31999)
+		ReduceStencilObjectsByAreaTo31999_MPIZ()
+	end()
+	stencil2objects()
+	
+	calcarea()
+	set(ob1=objects)
+	
+	set(ob00=objects)
+
+	FillSmallHoles()
+	////////////////////////////////////////////////////////////////////////////////////////
+
+	
+	//////////////////////////////////////////////////////////////////////////////// Cleanes the initial mask
+	///// Finds Skeleton
+	
+	set(IM_start=objects.body.mask.image)
+	maskthinning_temp(objects,image1)
+	maskthinning_temp(objects,image1)
+	maskthinning_temp(objects,image1)
+	maskthinning_temp(objects,image1)
+	
+	//if(Showillustrations)
+		//imageview(image1, "Signal",image=image1,gamma=2.0)
+		//imageview(objects.body, "Lines0",image=image1,gamma=2.0)
+	//end()
+	//CalcSkeletonByIntensity(image=image1,intensityEvalParam=0)
+	renameattr(skeleton=body)
+	CalcSkeletonByIntensity(stencil=skeleton, image=image1, IntensityEvaluationMode=2, IntensityEvalParam=-1)
+	renameattr(skeleton=skeleton_skeleton)
+	CalcSkeletonByIntensity(stencil=skeleton, image=image1, IntensityEvaluationMode=2, IntensityEvalParam=-2)
+	renameattr(skeleton_skeleton_byIntensity=skeleton_skeleton)
+	CalcSkeleton(stencil=skeleton_skeleton_byIntensity)
+	renameattr(skeleton_skeleton=skeleton_skeleton_byIntensity_skeleton)
+	set(obx=objects)
+	mask2stencil(objects.skeleton_skeleton.mask, neighbourhood=8)
+	stencil2objects()
+	setattr(skeleton_skeleton,body)
+	calczone(-40, stencil=obx.body)
+	zonemask(-40,oo)
+	calcarea()
+	objectfilter(area>20)
+	
+	set(IM_skeleton=objects.skeleton_skeleton.mask.image)
+	
+	renameattr(sk=skeleton_skeleton)
+	if(ShowIllustrations)
+		//imageview(objects.sk, "Lines1",image=image1,gamma=2.0)
+	end()
+	div(result,image1, infinity=0, spreadfactor=1000, uncertainty=0, result_type="Unsigned,short")
+	mask(0.1,image=result)
+	set(M_10=mask)
+	mask(result.median, image=result)
+	and(image=M_10.image,mask=mask.image)
+	and(image=objects.sk.image,mask=image)
+	setattr(sk_thresholded,image.vector)
+	set(ob2=objects)
+
+	RemoveSkeletonLayer(skeletonName="sk")
+	set(ob3=objects)
+	RemoveSkeletonLayer(skeletonName="sk_LayerRemoved")
+	set(ob4=objects)
+	RemoveSkeletonLayer(skeletonName="sk_LayerRemoved_LayerRemoved")
+	renameattr(sk_mod=sk_LayerRemoved_LayerRemoved_LayerRemoved)
+	calcarea(sk_mod)
+	calcintensity(sk_mod,image=result)
+	set(ob5=objects)
+	
+	//////////////////// The found skeleton is in the list ob5, stencil sk_mod
+	////////////////////////////////////////////////////////////////////////// End of  Finds Skeleton
+	
+	
+	/////////////////////////////////////////////////// Cell detection, creates from skeleton cells borders
+	stencil2objects(objects.sk_mod)
+	FillSmallHoles()
+
+	setattr(filled,objects.filled,objects=ob5)
+	calcarea(filled)
+	calcattr(RelativeHoleArea,(1.0*filled_area)/(1.0*sk_mod_area))
+	objectfilter((sk_mod_area>100 or sk_mod_intensity>10) and sk_mod_area>30)
+	objectfilter(RelativeHoleArea<0.04 or sk_mod_area>100)
+	
+	calcerosion(-3,stencil=sk)
+
+	Calcskeleton(sk_mod)
+	RemoveSkeletonLayer(skeletonName="sk_mod_skeleton")
+	
+	set(Lines=objects)
+	if(ShowIllustrations)
+		//imageview(lines.sk, "Lines2",image=image1,gamma=2.0)
+		//imageview(lines.sk_LayerRemoved, "Lines3",image=image1,gamma=2.0)
+		//imageview(lines.sk_mod, "Lines4",image=image1,gamma=2.0)
+	end()
+	blank(image1.width,image1.height,1)
+	set(IM_blank=image)
+	set(IM_blank.type="mask")
+	clearborders(IM_blank,4)
+
+	not(image=stencil)
+	clearborders(image,3)
+	
+	or(image=stencil,mask=Lines.sk_eroded.mask.image)
+	set(M_border=image)
+	not(image=image)
+	clearborders(image,3)
+	set(M_body=stencil)
+	
+	mask2stencil(M_body)
+	stencil2objects()
+	
+	calcerosion(-5)
+	stencil2objects(objects.eroded)
+	calcarea()
+	
+	RemoveSmallObjects(minarea=650)
+	
+	FillSmallHoles(minimumholearea=400)
+	if(lines.count==0)
+		calcarea()
+		objectfilter(area>image1.width*image1.height+10)
+	else()
+		if(lines.body.area>200)
+
+			if(OL_erase.count>0)
+				carrypixels(image=objects.body.image,mask=ol_erase.zonemask.mask,data=0)
+				setattr(body,image.vector)
+				setattr(index,image)
+				calcborder()
+				calcarea()
+				objectfilter(area>1200)
+				
+				calcintensity(image=image1)
+				and(image=objects.filled.image,mask=objects.body.mask.image)
+				setattr(filled,image.vector)
+			end()
+		else()
+			calcarea()
+			
+			objectfilter(area>image1.width*image1.height+10)
+		end()
+	end()
+	set( keepobjects = objects)
+	objectfilter(body.area<40000)
+	objectfilter(body.area>800)
+	set(LeafCells=objects)
+	set( objects = keepobjects)
+	objectfilter( body.area >=40000)
+	set(BigLeafCells = objects)
+}
+
+
+
+
+proc DetectType2Objects(
+	image image1 in "Input image with intensity information",
+	objectlist Lines in "Input list of line structure",
+	objectlist LeafCells inout "Input-output list of cells. In output list regions, which belong to type2 objects are erased.",
+	bool showillustrations=yes in,
+	objectlist ObjectsType2 out "List of detected type objects"
+)
+{
+	//////////////////////////////////////////////////// Finds Type2 objects
+	
+	stencil2objects(Lines.sk_mod)
+	
+	FillSmallHoles(minimumholearea=1000)
+	calcarea()
+	calcarea(filled)
+	mask2stencil(objects.filled.mask)
+	stencil2objects()
+	calcarea()
+	objectfilter(area>150)
+	calcerosion(-1)
+	
+	and(image=objects.eroded.image, mask=lines.sk_mod.mask.image)
+	setattr(border_corrected,image.vector)
+	calcintensity(border_corrected,image=image1)
+	
+	objectfilter(border_corrected_intensity>1000)
+	
+	
+	///New part added in Nov 9, 2006
+	Dark_Mask(image1, 7)
+	CalcErosion(-1)
+	Stencil2Objects(Objects.eroded)
+	Calcintensity(image=result)
+	renameattr(DarkSig=intensity)
+	Calcintensity(image=image1)
+	CalcAttr(RelDarkSig,(1.0*DarkSig)/(intensity))
+	
+	CalcIntensity(border,image=image1)
+	Calczone(-3,zonetype="equidistant")
+	zonemask(-3,3)
+	renameattr(BorderRegion=zonemask)
+	Zonemask(3,oo)
+	Renameattr(InnerRegion=Zonemask)
+	Calcintensity(InnerRegion,image=image1)
+	
+	Calcintensity(BorderRegion,image=image1)
+	CalcAttr(Inner2BorderRatio, InnerRegion_intensity/Border_intensity)
+	CalcAttr(Border2BorderRatio, BorderRegion_intensity/Border_intensity)
+	Zonemask(4, 5)
+	Renameattr(Region4=Zonemask)
+	CalcIntensity(Region4, image=image1)
+	Mean(5,image=image1)
+	
+	CalcStat("Min",AttrName="MinIntensity", stencil=InnerRegion,image=image)
+	//Zonemask(7,oo)
+	//Renameattr(Region7=Zonemask)
+	//CalcIntensity(Region7, image=IM_projected1)
+	CalcAttr(MinToRegion4Ratio, (1.0*MinIntensity)/Region4_intensity)
+	CalcAttr(MinToBorderRatio, (1.0*MinIntensity)/Border_intensity)
+	CalcAttr(DarkToRegion4, (1.0*DarkSig)/Region4_intensity)
+	CalcArea()
+	//CalcWidthLength()
+	//CalcAttr(Width2LengthRatio,(2.0*Half_width)/(full_length))
+	deleteattr(zone,outerzone)
+	set(ObjectsType2=objects)
+
+	
+	///// End of finds Type2 objects
+	
+	///// Removes from list of cells Type2 objects
+	carrypixels(image=LeafCells.body.image,mask=ObjectsType2.body, data=0)
+	//carryobjects(image=cells.body.image, stencil=ObjectsType2.body, data=ObjectsType2.ObjectNumber)
+	stencil2objects(image.vector)
+	set(LeafCells=objects)
+} 
+
+proc CalcFillStencil_MPIZ(
+	string StencilName="body" noquote in "Name of the stencil type attribute in the input object list, which will be filled. Only short attribute names are supported: StencilName=body is correct whereas centers=Objects.Body is erroneous. The attribute name can be given with and without the quotation marks, i.e. both are correct: StencilName=body and StencilName=\"body\".",
+	objectlist objects inout "Input-output object list. The output list includes a new stencil type attribute, which corresponds to the created objects. A number of objects is equal to a number of the initial centers. In case of body stencil (StencilName=\"body\") the added attribute has the name \"Filled\" otherwise \"StencilName_Filled\". For example, if StencilName=\"BrightMask\" the attribute name is \"BrightMask_Filled.\"." 
+) object list attribute creation "Fills the gaps (holes) in the geometrical regions given by a stencil type attribute. The output object list includes a new stencil, which corresponds to the \"filled regions\". See also the module FillObjects(), which performs exactly the same operation. The difference is that CalcFillStencil_MPIZ() can be applied to all stencil type attributes while FillObjects() only to the body one."
+{
+	set(objects_in=objects)
+	eval("set(Stencil=objects." & StencilName & ")")
+	if(errorcode==0)
+		if(Stencil.class!="intervalvector")
+			error("Input StencilName does not correspond to the stencil-type attribute. The input StencilName must specify the stencil type attribute in the input object list, which defines the centers positions. Only short attribute names are supported: centers=body is correct whereras centers=Nuclei.Body is erroneous. The attribute name can be given with and without the quatation marks, both are correct: centers=body and centers=\"body\". It is assumed that the centers approximately correspond to the local intensity maximums (maximum regions) or to minimums (minimum regions).")
+		end()
+	else()
+		FindShortAttrNameFromLongName(StencilName)
+		eval("set(Stencil=objects." & ShortAttrName & ")")
+		if(errorcode==0)
+			if(Stencil.class=="intervalvector")
+					error("Input StencilName does not correspond to the attribute in the input object list. Probably, a long attribute name was used instead of a short one. Only short attribute names are supported: StencilName=body is correct whereras StencilName=Objects.Body is erroneous. The attribute name can be given with and without the quatation marks, both are correct: StencilName=body and StencilName=\"body\". It is assumed that the centers approximately correspond to the local intensity maximums (maximum regions) or to minimums (minimum regions).")
+			end()
+		end()
+		error("The input StencilName does not correspond to the existing stencil type attribute in the input object list. The input StencilName must specify the stencil type attribute in the input object list.. Only short attribute names are supported: StencilName=body is correct whereras StencilName=Objects.Body is erroneous. The attribute name can be given with and without the quatation marks, both are correct: StencilName=body and StencilName=\"body\".")
+	end()
+	
+	stencil2objects(stencil)
+	Fillobjects()
+	if(objects.count!=objects_in.count)
+		set(st_temp=objects.body)
+		FillStencilfromCenter_tech(objects_in.body,objects.body)
+		stencil2objects(stencil)
+	end()
+	set(ob2=objects)
+	if(StencilName=="body")
+		setattr(Filled,ob2.body,objects=objects_in)
+		setattr(Filled_border,ob2.border)
+	else()
+		set(temp="" & StencilName & "_Filled,ob2.body,objects=objects_in)")
+		eval("setattr(" & temp )
+		set(temp="" & StencilName & "_Filled_border,ob2.border)")
+		eval("setattr(" & temp )
+	end()
+}
+
+
+proc Haustoria_detection(
+//INPUT
+image reference in "Nuclei stained image with intensity information. Nuclei are detected by this image. Supported image types are: 8-bit and 16-bit.",
+objectlist Lines in "Input list of line structure. Used only for additional attribute creation",
+bool ShowIllustrations=NO in "YES- Output illustrations are depicted. No- Output illustrations are not shown.",
+//OUTPUT
+objectlist Haustoria out "Output object list with initial objects. Object filter must be applied in the next steps for Haustoria classification.",
+double line_mean out "Mean intensity of the line structure",
+double nuclei_quantile7 out "Quantile 0.7 for intensity of nuclei" 
+) object recognition "Detects initial objects for haustoria detection. Object filter must be applied in the next steps for Haustoria classification. The procedure corresponds to nuclei_detection_A() routine."
+{
+	Input(MinimumHaustoriaArea, 120, "Minimum Haustorium Area","i", "Minimum allowed area for haustorium, objects with area less than the limit are removed.") 
+	
+	// Inner-technical nuclei detection procedure
+	//nuclei_detection_A_inner(reference, 0.9, MinimumHaustoriaArea, 0.4, 0.7)  // AK 3.12.2007
+	nuclei_detection_A_inner(reference, 0.9, MinimumHaustoriaArea, 0.4, 1) 	// AK 3.12.2007
+			
+	ErrorReceiverForNucleiDetectionLibrary_v1()
+	if(ShowIllustrations)
+		imageview(item=InitialMask.border.mask, label="InitialMask", title="Mask after the initial thresholding. Adjust par. \"Threshold Adjustment\"", image=reference, gamma=2.6)	
+	end() 		
+	// Removes breaking lines between the stuck nuclei, 
+	// Input parameter is fixed
+	controlbreakinglines_v12(nuclei, 0.8) 
+	// Adds to object list a contrast attribute
+	object_contrast_general(cells_out, reference, InitialMask=InitialMask.body.mask) 
+	
+	// Creates the illustration "LowContrastObjects"
+	if(ShowIllustrations) 
+		set(CL_Temp=objects)
+		objectfilter(contrast<=0.1)
+		imageview(item=objects.border, label="LowContrastObjects", title="Discarded low contrast objects. Adjust par. \"Minimum Nuclear Contrast\"", image=reference, gamma=2.6)
+		set(objects=CL_Temp)
+	end()
+	objectfilter(contrast>0.1)
+
+	if(ShowIllustrations)
+		imageview(item=objects.border, label="InitialHaustoriaI", title="Initial candidates for Haustoria. Classification must be applied.", image=reference, gamma=2.6)
+	end()
+	calcarea()
+	calcintensity(image=reference)
+	
+	and(image=objects.body.image, mask=Lines.sk_mod_skeleton_LayerRemoved.mask.image)
+	setattr(lines, image.vector)
+	
+	if(Lines.sk_mod_skeleton_LayerRemoved.area>50)
+		stat("mean",variable="line_mean", mask=Lines.sk_mod_skeleton_LayerRemoved,image=reference)
+	else()
+		set(line_mean=reference.mean)
+	end()
+	if(objects.count>30)
+		quantile(objects.intensity,0.7)
+		set(nuclei_quantile7=quantile)
+	else()
+		if(objects.count>24)
+			quantile(objects.intensity,0.6)
+			set(nuclei_quantile7=quantile)
+		else()
+			if(objects.count>20)
+				quantile(objects.intensity,0.5)
+				set(nuclei_quantile7=quantile)
+			else()
+				set(nuclei_quantile7=line_mean)
+			end()
+		end()
+	end()
+	calcarea(lines)
+	calcwidthlength()
+	calcattr(Width2LengthRatio, (2.0*half_width)/(full_length))
+	//objectfilter(intensity>line_mean and half_width>4 and lines_area<5 and  (Width2LengthRatio>0.45 or (intensity>1.4*line_mean and Width2LengthRatio>0.4)))
+	
+	deleteattr(zone, outerzone)
+	set(Haustoria=objects)
+} 
+
+proc SpotClassificationLeafCells(
+image IM_projected1 in "Input image with intensity information. Spots are detected by this image",
+objectlist spots in "Input list of the initial spots",
+bool showillustrations in "Yes- depicts the spot classification illustrations, No- the spot classification illustrations are not shown",
+objectlist SpotsFiltered out "List of the classified spots with the calculated attributes"
+) "Detects the actual spot locations by the initial list. Creates a new list and calculates attributes like area, contrast, width, length etc and thereupon classifies/filters the spots."
+{
+		input(spotMinimumArea, 1, "SpotMinimumArea","i","Minimum allowed area for spots. Objects with area less than the limit are discarded.")
+		input(SpotMinimumContrast, 0.18, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
+		input(SpotMinimumRoundness, 0.1, "SpotMinimumRoundness", "d", "Minimum allowed roundness parameter for spots. Objects with the parameter value less than the limit are discarded.")
+		input(MinimumWidth2LengthRatio, 0.5, "SpotMinimumWidth2LengthRatio","d", "Minimum allowed width to length ratio for spots. Objects with the ratio below the limit are discarded.")
+
+		Bright_Mask(IM_projected1,3)
+		set(r6=result)
+		div(result, IM_projected1, result_type="unsigned,short", spreadfactor=1000, infinity=0)
+		mask(threshold=0.05,image=result)
+		set(M10=mask)
+		mask(threshold=IM_projected1.median, image=r6)
+		and(image=M10.image,mask=mask.image)
+		set(M11=image)
+		
+		calcerosion(-3.3,spotcenters,objects=spots)
+		renameattr(centerseroded3=spotcenters_eroded)
+		
+		calcerosion(-2,spotcenters)
+		calcerosion(-12,spotcenters_eroded,restrictivestencil=m10, numberofsteps=3)
+		CalcFillStencil_MPIZ(StencilName="spotcenters_eroded_eroded")
+		
+		RenameAttr(body2=spotcenters_eroded_eroded_filled)
+		calcborder(body2)
+		CalcArea(body2)
+		set(OL_temp1=objects)
+		stencil2objects(objects.body2)
+		CalcWidthLength()
+		set(OL_temp2=objects)
+		setattr(FullLength,ol_temp2.full_length,objects=ol_temp1)
+		setattr(HalfWidth,ol_temp2.half_width)
+		CalcAttr(Width2LengthRatio, iif(FullLength>0,(2.0*HalfWidth/FullLength),0.0))
+		CalcRoundnessCorrected(Body2)
+		
+		setattr(body4,body2)
+		calcerosion(1,body4)
+		calcerosion(-1,body4_eroded)
+		renameattr(body4=body4_eroded_eroded)
+		set(OL_temp1=objects)
+		stencil2objects(objects.body4)
+		CalcWidthLength()
+		set(OL_temp2=objects)
+		setattr(body4_FullLength,ol_temp2.full_length,objects=ol_temp1)
+		setattr(body4_HalfWidth,ol_temp2.half_width)
+		CalcAttr(body4_Width2LengthRatio, iif(FullLength>0,(2.0*HalfWidth/FullLength),0.0))
+		CalcArea(body4)
+		CalcRoundnessCorrected(Body4)
+		CalcAttr(AreaRatio42,iif(Body2_area>0, (1.0*Body4_area)/(1.0*Body2_area),0.0))
+		
+		objectfilter(body2_area>0)
+		if(ShowIllustrations)
+			imageview(objects.body2_border, "InitialSpots", image=IM_projected1, title="Spot candidates after the initial detection", gamma=2.0)
+		end()
+		ObjectFilter(HalfWidth>0.9)
+		//ObjectFilter(HalfWidth>2.01)
+		ObjectFilter(Width2LengthRatio>MinimumWidth2LengthRatio or (Width2LengthRatio>0.8*MinimumWidth2LengthRatio and body2_roundnesscorrected>1.1*SpotMinimumRoundness ) or (body4_Width2LengthRatio>0.6 and body4_RoundnessCorrected>0.8 and AreaRatio42>0.75) )
+		if(ShowIllustrations)
+			//imageview(objects.body2_border, "WidthLength", image=IM_projected1, title="Spots after filtering by  Width and Width2LengthRatio", gamma=2.0)
+		end()
+		//set(ol_s1a=objects)
+		
+		objectfilter(Body2_roundnesscorrected>=SpotMinimumRoundness )
+		if(ShowIllustrations)
+			//imageview(objects.body2_border, "Roundness", image=IM_projected1, title="Spots after filtering by  Roundness", gamma=2.0)
+		end()
+		
+		
+		objectfilter(body2_area>=spotMinimumArea)
+		if(ShowIllustrations)
+			//imageview(objects.body2_border, "Area", image=IM_projected1, title="Spots after filtering by  Area", gamma=2.0)
+		end()
+		CalcErosion(-2,body2)
+		calcborder(body2_eroded)
+		CalcIntensity(Body2_eroded_border, image=IM_projected1)
+		CalcStat("max",stencil=body2, image=IM_projected1)
+		
+		CalcAttr(th, Body2_eroded_border_intensity+0.3*(max-Body2_eroded_border_intensity)+2.0*sqrt(Body2_eroded_border_intensity))
+		threshmask(stencil=body2_eroded,threshold=th,image=IM_projected1)
+		calcerosion(-13, spotcenters_eroded,restrictivestencil=threshmask)
+		renameattr(body3=spotcenters_eroded_eroded)
+		calcattr(body2_contrast, (spotpeakintensity-Body2_eroded_border_intensity)/(spotpeakintensity+Body2_eroded_border_intensity))
+		selectbrightspots(body2,body2,image=IM_projected1)
+		calcerosion(-1,brightspots)
+		carrypixels(image=objects.brightspots_eroded.image,mask=objects.brightspots.mask,data=0)
+		setattr(region8,image.vector)
+		calcintensity(region8,image=IM_projected1)
+		calcattr(PeakToReg8Intensity, (1.0*max-Region8_intensity)/(1.0*max-Body2_eroded_border_intensity))
+		
+		objectfilter(body2_contrast>SpotMinimumContrast )
+		if(ShowIllustrations)
+			imageview(objects.body2_border, "Contrast", image=IM_projected1, title="Spots after filtering by  Contrast", gamma=2.0)
+		end()
+		
+		//objectfilter(PeakToReg8Intensity<0.5)
+		objectfilter(PeakToReg8Intensity<0.8)
+
+		if(ShowIllustrations)
+			//imageview(objects.body2_border, "Peak2Neighborhood", image=IM_projected1, title="Spots after filtering by  Peak to neighborhood filter", gamma=2.0)
+		end()
+		
+		calcerosion(-16,spotcenters_eroded,restrictivestencil=m10, numberofsteps=4)
+		CalcFillStencil_MPIZ(StencilName="spotcenters_eroded_eroded")
+		
+		RenameAttr(body2=spotcenters_eroded_eroded_filled)
+		calcborder(body2)
+		CalcArea(body2)
+		set(OL_temp1=objects)
+		stencil2objects(objects.body2)
+		CalcWidthLength()
+		set(OL_temp2=objects)
+		setattr(FullLength,ol_temp2.full_length,objects=ol_temp1)
+		setattr(HalfWidth,ol_temp2.half_width)
+		CalcAttr(Width2LengthRatio, iif(FullLength>0,(2.0*HalfWidth/FullLength),0.0))
+		CalcRoundnessCorrected(Body2)
+		
+		
+		//ObjectFilter((Width2LengthRatio>=MinimumWidth2LengthRatio and body2_roundnesscorrected>SpotMinimumRoundness) or  (Width2LengthRatio>0.8*MinimumWidth2LengthRatio and SpotMinimumRoundness>1.1) )
+		ObjectFilter((Width2LengthRatio>=0.8*MinimumWidth2LengthRatio and body2_roundnesscorrected>SpotMinimumRoundness))
+
+		Set(SpotsFiltered=objects)
+		// Cleanes the list, renames the attributes etc
+		Stencil2Objects(objects.body2)
+		CalcIntensity(image=IM_projected1)
+		CalcStat("Sum",AttrName="IntegratedSpotSignal",Stencil=Body,image=IM_projected1)
+		Setattr(Area,SpotsFiltered.body2_area)
+		Setattr(RoundnessCorrected,SpotsFiltered.body2_RoundnessCorrected)
+		Setattr(Width2lengthRatio,SpotsFiltered.Width2lengthRatio)
+		Setattr(FullLength,SpotsFiltered.FullLength)
+		Setattr(HalfWidth,SpotsFiltered.HalfWidth)
+		Setattr(Contrast, SpotsFiltered.Body2_contrast)
+		Setattr(PeakIntensity, SpotsFiltered.max)
+		Setattr(SpotCenters, SpotsFiltered.SpotCenters)
+		
+		SetAttr(ReferenceRegions,SpotsFiltered.Body2_eroded_border)
+		SetAttr(ReferenceRegions_intensity,SpotsFiltered.Body2_eroded_border_intensity)
+		SetAttr(ReferenceIntensity, ReferenceRegions_intensity)
+		CalcArea(ReferenceRegions)
+		SetAttr(CellIntensity, SpotsFiltered.CellIntensity)
+		CalcAttr(SpotToCellIntensity, (1.0*PeakIntensity)/(1.0*CellIntensity))
+		CalcAttr(IntegratedSpotSignal_Backgroundsubtracted, 1.0*IntegratedSpotSignal-(area*ReferenceIntensity))
+		CalcAttr(IntegratedSpotSignal_Backgroundsubtracted, iif(IntegratedSpotSignal_Backgroundsubtracted>0.0000001,IntegratedSpotSignal_BackgroundSubtracted,0.0))		
+		Set(SpotsFiltered=objects)
+}
+
+proc Spot_detection_outputs_modified(objectlist objects in  "Input object list of ~cells (SearchObjects) with spot data, must contain same attributes as spot detection output list WholeCells. Please note that list of spots can not be used here as it does not contain all required data, e.g. number of ~cells, ~cell area etc.",
+	bool ShowOutputParameters=YES in "YES- Output parameters are reported to player and/or to database. No- Output Parameters are not reported.",
+	string NamePreFix="" in "String, which is added to output names as prefix",
+	double NumberOfSpots out "Total number of detected spots.",
+	double SpotsPerObject out "Number of spots per object (i.e. number of spots per ~cell).",
+	double SpotsPerArea out "Number of spots per SearchRegion area (i.e. number of spots per visible ~cell area).",
+	double IntegratedSpotSignalPerCellularSignal out "Integrated spot signal over all spots normalized by integrated ~cellular signal (total signal over all SearchRegion area).",
+	double IntegratedSpotSignalPerCellularSignal_BackgroundSubtracted out "Integrated spot signal over all spots background subtracted and normalized by integrated ~cellular signal (total signal over all SearchRegion area).",
+	
+	double IntegratedSpotSignalPerArea out "Integrated spot signal per SearchRegion area (per visible ~cell area).",
+	double IntegratedSpotSignalPerArea_BackgroundSubtracted out "Integrated spot signal BackgroundSubtracted per SearchRegion area (per visible ~cell area)."
+
+	)  spot detection "Supporting procedure for spot detection library. Reports spot detection outputs. Please note that output parameters can be reported by list of SearchObjects (e.g. list of ~cells), which contains spot data. List of spots does not contain information about number of ~cells, ~cell area etc and therefore all spot outputs can not be reported by this list. Input list Objects must contain same attributes (spot data) as spot detection output list WholeCells. Could be used in multiple-field scripts or after spot or ~cell classification etc. See more in Opera spot detection manual."
+{
+
+	if(objects.count>0)
+		
+		set(NumberOfSpots=1.0*objects.NumberOfspots.sum)
+		set(SpotsPerObject=NumberOfSpots/(1.0*objects.count))
+		if(objects.searchregionarea.sum>0)
+			set(SpotsPerArea=NumberOfSpots/objects.searchregionarea.sum)
+			set(IntegratedSpotSignalPerArea=(1.0*objects.integratedspotsignal.sum)/(1.0*objects.searchregionarea.sum))
+			set(IntegratedSpotSignalPerArea_backgroundsubtracted=(1.0*objects.integratedspotsignal_backgroundsubtracted.sum)/(1.0*objects.searchregionarea.sum))
+		
+		else()
+			set(SpotsPerArea=NAN)
+			set(IntegratedSpotSignalPerArea=NAN)
+			set(IntegratedSpotSignalPerArea_backgroundsubtracted=NAN)
+		end()
+		
+		if(objects.searchregionintegratedSignal.sum>0)
+			set(IntegratedSpotSignalPerCellularSignal=(1.0*objects.integratedspotsignal.sum)/(1.0*objects.searchregionintegratedSignal.sum))
+			set(IntegratedSpotSignalPerCellularSignal_backgroundsubtracted=(1.0*objects.integratedspotsignal_backgroundsubtracted.sum)/(1.0*objects.searchregionintegratedSignal.sum))
+		else()
+			set(IntegratedSpotSignalPerCellularSignal=NAN)
+			set(IntegratedSpotSignalPerCellularSignal_backgroundsubtracted=NAN)
+		end()
+	else()
+		
+		
+		set(NumberOfSpots=0.0)
+		set(SpotsPerObject=NAN)
+		set(SpotsPerArea=NAN)
+		set(IntegratedSpotSignalPerCellularSignal=NAN)
+		set(IntegratedSpotSignalPerCellularSignal_backgroundsubtracted=NAN)
+		set(IntegratedSpotSignalPerArea=NAN)
+		set(IntegratedSpotSignalPerArea_backgroundsubtracted=NAN)
+	end()
+		
+	if(ShowOutputParameters)
+		create_spot_outputs()
+	end()
+	
+}
+
+
+//(proc Spot_detection_outputs_NoValidFields(
+//	bool ShowOutputParameters=YES in "YES- Output parameters are reported. No- Output Parameters are not reported.",
+//	string NamePreFix="" in "String, which will be added to output names as prefix",
+//	double NumberOfSpots out "Total number of detected spots.",
+//	double SpotsPerObject out "Number of spots per object (i.e. number of spots per ~cell).",
+//	double SpotsPerArea out "Number of spots per SearchRegion area (i.e. number of spots per visible ~cell area).",
+//	double IntegratedSpotSignalPerCellularSignal out "Integrated spot signal over all spots normalized by integrated ~cellular signal (total signal over all SearchRegion area).",
+//	double IntegratedSpotSignalPerCellularSignal_BackgroundSubtracted out "Integrated spot signal over all spots background subtracted and normalized by integrated ~cellular signal (total signal over all SearchRegion area).",
+//	
+//	double IntegratedSpotSignalPerArea out "Integrated spot signal per SearchRegion area (per visible ~cell area).",
+//	double IntegratedSpotSignalPerArea_BackgroundSubtracted out "Integrated spot signal BackgroundSubtracted per SearchRegion area (per visible ~cell area)."
+//
+//	)   spot detection "Supporting procedure for spot detection library. Used in spot detection multiple field script. Reports spot detection outputs with NAN values, called if there are no valid fields. See paragraph about Opera_multifields_spots.script in Opera spot detection manual."
+//{
+//	set(NumberOfSpots=NAN)
+//	set(SpotsPerObject=NAN)
+//	set(SpotsPerArea=NAN)
+//	set(IntegratedSpotSignalPerCellularSignal=NAN)
+//	set(IntegratedSpotSignalPerCellularSignal_backgroundsubtracted=NAN)
+//	set(IntegratedSpotSignalPerArea=NAN)
+//	set(IntegratedSpotSignalPerArea_backgroundsubtracted=NAN)
+//	if(ShowOutputParameters)
+//		create_spot_outputs()
+//	end()
+//})
+
+
+proc CalcRoundnessCorrected(
+	String StencilName="body" noquote in "Name of a stencil stencil type attribute in the input list. The input must correspond to the stencil type attribute in the input list. Only short syntax of attribute names is supported: StencilName=body is correct and  StencilName=Objects.Body is erroneous. The input can be given with and without the quatation marks, both are correct: StencilName=body and StencilName=\"body\".", 
+	objectlist objects inout "Input-output object list. The output list contains the calculated corrected roundness attribute RoundnessCorrected. In case of body stencil (StencilName=\"body\") the attribute name is \"RoundnessCorrected\" otherwise \"StencilName_RoundnessCorrected\". For example, if StencilName=\"MembraneRegion\" the attribute name is \"MembraneRegion_RoundnessCorrected\"."
+) object list attribute creation "Finds the corrected roundness parameter for a stencil type attribute. The output list contains the found attribute RoundnessCorrected."
+{
+	set(objects_in=objects)
+	if(!defined("objects." & StencilName))
+		
+		error("In the input object list there is no attribute with name " & StencilName & ". The input StencilName must correspond to the stencil type attribute in the input list. Only short syntax of attribute names is supported: StencilName=body is correct and  StencilName=Objects.Body is erroneous. The input can be given with and without the quatation marks, both are correct: StencilName=body and StencilName=\"body\".")
+	end()
+	eval("SetAttr(CurrentStencilX, objects." & StencilName & ")")
+	if(errorcode!=0)
+		error()
+	end()
+	if(objects.CurrentStencilX.class!="intervalvector")
+			error(StencilName & " is not a stencil type attribute. The input StencilName must  correspond to a stencil type attribute in the input object list. Only short syntax of attribute names is supported: StencilName=body is correct and  StencilName=Objects.Body is erroneous. The input can be given with and without the quatation marks, both are correct: StencilName=body and StencilName=\"body\".")
+	end()
+
+	CalcArea(CurrentStencilX)
+	CalcBorder(CurrentStencilX)
+	CalcArea(CurrentStencilX_border)
+	CalcAttr(RoundnessCorrected, 3.544*sqrt(1.0*CurrentStencilX_Area-CurrentStencilX_border_area/2.0)/CurrentStencilX_border_area-0.1, autorecalc=no)
+
+	if(StencilName=="body")
+		setattr(RoundnessCorrected, objects.RoundnessCorrected,objects=objects_in)
+	else()
+		set(temp="" & StencilName & "_RoundnessCorrected, objects.RoundnessCorrected,objects=objects_in)")
+		eval("setattr(" & temp )
+	end()
+}
+
+
+
+
+/////////////////////////////////////////////// PROCEDURE DEFINITIONS
+// Procedure counts fields and controls if all images are present
+proc ControlImageFieldsStackAC2(Table sourcedata in, int NumberOfChannels in, int ZplanesInStack in, int StackNo in, int StackCount out, int StartStack out, int EndStack out, int ImagesINOneStack out, int InvalidStacks out)
+{
+	set(ImagesINOneStack=NumberOfChannels*ZplanesInStack)    //calculates number of images per stack
+	if(ImagesINOneStack<1)
+		error("Number of channels or number of images in stack is not a positive number. Please select a number larger than 0.")
+	end()
+
+	set (ImageCount = sourcedata.rowcount)		// determine the number of images present
+	
+
+	if ((ImageCount ~ ImagesINOneStack) != 0)
+		error("Number of images ("&ImageCount&") is not a multiple of the number of images per stack ("&ImagesINOneStack&").")
+	end()
+
+	set (StackCount = int(ImageCount / ImagesINOneStack))
+
+	if (StackCount == 0)
+		error("No sufficient number of images found in the data file. Only "&StackCount&" images found, but "&ImagesINOneStack&" needed for a stack.")
+	end()
+
+	if (StackNo == 0)   // all images present are analysed
+		set (StartStack = 1)
+		set (EndStack = StackCount)
+	else()
+		if (StackNo > StackCount)       /// Error message if too high Image Field number was chosen
+			error("Please select a smaller field number. There are only "&StackCount&" stacks in the file, but you selected to analyse stack "&StackNo&". ")
+		end()
+		if (StackNo < 0)   ////Error message if negative Image Field number was chosen
+			error("Please select a positive stack number.")
+		end()
+		set (StartStack = StackNo)
+		set (EndStack = StackNo)
+		set (StackCount=1)
+	end()
+	set(InvalidStacks=0)   //variable for counting of invalid black image fields
+}
+
+//Procedure assigns image names for the current field
+proc Assign_FirstLastZplane(Table sourcedata in, int _StackCounter in, int ImagesINOneStack in, int NumberOfChannels in, int FirstZplane out , int LastZplane out)
+{
+	set(FirstZplane=(_StackCounter-1)*ImagesINOneStack+1)
+	set(LastZplane=(_StackCounter)*ImagesINOneStack-NumberOfChannels+1)
+}
+
+
+/////////////////////////////////////////////// MAIN SCRIPT STARTS
+// INPUT PARAMETERS
+input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
+input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
+input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
+input(ShowIllustrations,YES, "ShowIllustrations","y","YES- Output illustrations are depicted. No- Output illustrations are not shown.")
+
+input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
+comment(
+input(spotMinimumArea, 21, "SpotMinimumArea","i","Minimum allowed area for spots. Objects with area less than the limit are discarded.")
+input(SpotMinimumContrast, 0.25, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
+input(SpotMinimumRoundness, 0.65, "SpotMinimumRoundness", "d", "Minimum allowed roundness parameter for spots. Objects with the parameter value less than the limit are discarded.")
+input(MinimumWidth2LengthRatio, 0.5, "SpotMinimumWidth2LengthRatio","d", "Minimum allowed width to length ratio for spots. Objects with the ratio below the limit are discarded.")
+)
+// READS IN IMAGES
+Singlewell(compact=yes)
+
+// COUNTS FIELDS AND CONTROLS IF ALL IMAGES ARE PRESENT
+ControlImageFieldsStackAC2(SourceData, NumberOfChannels, ZplanesInStack, StackNo)
+
+// LOOP OVER IMAGE FIELDS
+
+set(InvalidStacks = 0)  //counts black/grey stacks without information
+set(BadStacks = 0)   //counts stacks with Signal but no recognized cells
+set(all_VarsOK = 0)
+Foreach(StartStack .. EndStack, "_StackCounter") 
+	// Assigns image names for the current field, IM_CH1 - first channel image, IM_CH2 - second channel image etc
+	Assign_FirstLastZplane()	
+		
+	// User script STARTS
+	set( imagefilename1 = SourceData.sourcefilename[0])
+	//set( logfilename = "D:/dmeyer/test/filenames.txt" , imagefilename1=SourceData.sourcefilename[0])
+	CreateDataCubeWithControl( sourcedata, FirstZPlane, LastZPlane, MinStdDev) // Creates the initial data cube
+	DataCubeProjectionCorrection(FirstZplane, LastZPlane,DataCube) // Corrects the initial data cube (can be commented out)
+		
+	////// Projects maximum intensity for each x-y position from datacube to image
+	rearrange(datacube,vec(vec(0,0,1),vec(1,0,0),vec(0,1,0)), vec(datacube.depth, datacube.width,datacube.height), reduce="max")
+		
+	//Maximums3D(0,image=datacube)
+	//StencilFrom3DTo2D(stencil=maximums,datacube=datacube) //Projects the found maximums from 3-dim to plane
+	delete(datacube) 
+	set(IM_projected1=result)
+	set(IM_projected2=result)
+	////////////////////////////////////////////////////////////////////////////////////////
+		
+	LeafCellsDetection(IM_projected1) // Detection of Leaf cells
+		
+	DetectType2Objects(IM_projected1, Lines,LeafCells) //Detects stomata and "holes between cells", Stomata classification is at the end of the script
+		
+	///////////////////////////////////////////////////// Convolution before spot detection //////////////////////////
+	// added by kurt stueber 2006-09-08 //
+	//convolutionmask("Disk",3)
+	//convolution(image=IM_projected2, faster=yes)
+	//set(IM_projected2=image)
+
+	///////////////////////////////////////////////////// Spot detection
+	// Creates the SearchRegion, where the spots are searched - for too big Cells
+	CalcErosion(1,objects=BigLeafCells)
+	set(BigLeafCells=objects)
+	carrypixels(image=objects.eroded.image, mask=Lines.sk_mod_skeleton_LayerRemoved, data=0)
+	Setattr(SearchRegion,image.vector, objects=BigLeafCells)
+	CalcArea(SearchRegion)
+	Set(BigLeafCells=objects)
+		
+	spot_detection_c_inner(IM_projected2 , BigLeafCells.SearchRegion, BigLeafCells, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	SpotClassificationLeafCells(IM_projected1,Spots)
+		
+	set( BigCellSpots = SpotsFiltered )
+	//if(ShowIllustrations)
+		//imageview(BigCellSpots.border, "Outer Spots",image=IM_projected2, title = "Spots out of recognized Cell Borders", gamma=2.0)
+	//end()
+		
+	// Creates the SearchRegion, where the spots are searched - for normal Cells
+	CalcErosion(1,objects=LeafCells)
+	set(LeafCells=objects)
+	carrypixels(image=objects.eroded.image, mask=Lines.sk_mod_skeleton_LayerRemoved, data=0)
+	Setattr(SearchRegion,image.vector, objects=LeafCells)
+	CalcArea(SearchRegion)
+	Set(LeafCells=objects)
+		
+	// Detects the initial set of spots
+	spot_detection_c_inner(IM_projected2, LeafCells.SearchRegion, LeafCells, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	delete(spotcandidates,wholecells)
+		
+	// Detects the actual spot locations and attributes like area, contrast, width, length etc and classifies the spots and filters the spots.
+	SpotClassificationLeafCells(IM_projected1,Spots)
+		
+	//Detects the inital objects, outputs also statistics Line_mean and nuclei_quantile7
+	Haustoria_detection(IM_projected1,Lines, showillustrations=no) 
+	// Haustoria classification
+	objectfilter(intensity>1.3*line_mean and intensity>nuclei_quantile7 and half_width>4 and lines_area<5 and  (Width2LengthRatio>0.45 or (intensity>1.4*line_mean and Width2LengthRatio>0.4)), objects=haustoria) 
+	set(Haustoria=Objects)
+		
+	// Discards spots, which overlap with haustoria
+	and(image=SpotsFiltered.body.image,mask=Haustoria.body.mask.image)
+	setattr(Haustoria,image.vector,objects=SpotsFiltered)
+	calcarea(Haustoria)
+	Objectfilter(Haustoria_area<1)
+	set(SpotsFiltered=objects)
+		
+	Spot_detection_dataToSearchObjects(IM_projected1, "SearchRegion",SpotsFiltered,LeafCells)
+	set(LeafCells=Wholecells)
+		
+	// Stomata and Gaps classification
+	objectfilter(area>300 and ((DarkToRegion4<0.32 and Border_intensity>Line_mean) or (DarkToRegion4<0.24 and Border_intensity>0.8*Line_mean)), objects=objectstype2)
+	set(Stomata=objects)
+	CalcStat("max",Stencil=body,image=Stomata.body.image,objects=objectstype2)
+	objectfilter(max==0)
+	set(Gaps=objects)
+		
+	set( namelength = length( imagefilename1 ) )
+	set( corename = substr( imagefilename1, 1, namelength - 5 ) )
+	gamma( 2.0, image=IM_projected1)
+	set( Image_out = image)
+	writeimage( imagefile=corename & "_" & FirstZplane & "-" & LastZplane & ".png", image=Image_out, imageformat="png",  )
+	//write( "\tpng\t" & corename & "_" & FirstZplane & "-" & LastZplane & ".png" , logfilename, "ascii", append=true )
+		
+	if(showIllustrations)
+		imageview(IM_projected1, "Signal",image=IM_projected1, gamma=2.0)
+		if(SpotsFiltered.count>0)
+			imageview(Leafcells.border, "Cells " & _StackCounter, image=IM_projected1, title="Detected Leaf Cells in Stack # " & _StackCounter, gamma=2.0)
+			imageview(Leafcells.body, "Cells Area " & _StackCounter, image=IM_projected1,title="Detected Leaf Cells in Stack #" & _StackCounter, gamma=2.0)
+			//imageview(gaps.border, "Gaps",image=IM_projected1,title="Detected gaps between leaf cells",gamma=2.0)
+			//imageview(Stomata.border, "Stomata",image=IM_projected1,title="Detected Stomata",gamma=2.0)
+			//imageview(Haustoria.border,"Haustoria", image=IM_projected1, title="Detected Haustoria", gamma=2)
+			imageview(SpotsFiltered.border, "Spots " & _StackCounter, image=IM_projected1, title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
+			imageview(BigCellSpots.border, "Outer Spots " & _StackCounter, image=IM_projected1, title = "Spots out of recognized Cell Borders in Stack # " & _StackCounter, gamma=2.0)
+		else()
+			set(InvalidStacks=InvalidStacks+1)
+		end()
+	end()
+	delete(M10,M11,M8,m9, ol_temp1,ol_temp2,M_bright, m_bright4, IM_planenumber,IM_sk_mod_skeleton_LayerRemoved,mask,image,result,IM_projected2,spotsfilteredout,nuclei,r6,r7,spots,PlanenumberImage)
+	// User script ENDS
+		
+	// Output sequence starts
+	set(EntireNumberOfSpotsInStack = (BigCellSpots.count + SpotsFiltered.count))
+	set(PercentageCellAreaInPicture = (100 * ((1.0*LeafCells.SearchRegionArea.sum)/(1.0*357760))))
+	set(SpotsPerValidArea = ((1.0 * SpotsFiltered.count) / (1.0 * LeafCells.SearchRegionArea.sum)))
+		
+	if(StackNo == 0)  //if complete well
+		if (_StackCounter == 1)    //steps for first stack
+			push(NumberOfCellsInStackVector, leafcells.count)
+			push(NumberOfSpotsInStackVector, SpotsFiltered.count)
+			push(EntireNumberOfSpotsInStackVector, EntireNumberOfSpotsInStack)
+			if(PercentageCellAreaInPicture > 0.3)
+				push(SpotsPerValidAreaVector, SpotsPerValidArea)
+			else()
+				push(SpotsPerValidAreaVector, NAN)
+			end()
+			if(SpotsFiltered.count > 0)
+				set(PercentageOfValidSpots = (100 * (1.0 * SpotsFiltered.count)/((1.0 * SpotsFiltered.count) + (1.0 * BigCellSpots.count))))
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			else()
+				set(PercentageOfValidSpots = 0.0)
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			end()
+			if(PercentageOfValidSpots > 25)
+				push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
+				push(AverageAreaOfCellsInStackStddevVector, leafcells.SearchRegionArea.stddev)
+				push(AverageNumberOfSpotsPerCellVector, leafcells.NumberOfSpots.mean)
+				push(AverageNumberOfSpotsPerCellStddevVector, leafcells.NumberOfSpots.stddev)
+				push(PercentageCellAreaInPictureVector, PercentageCellAreaInPicture)
+				if(all_VarsOK == 0)
+					set(all_LeafCells=LeafCells)
+					set(all_SpotsFiltered=SpotsFiltered)
+					set(all_ObjectsType2=ObjectsType2)
+					//set(all_Haustoria=Haustoria)
+					set(all_Stomata=Stomata)
+					set(all_Gaps=Gaps)
+					set(all_VarsOK = all_VarsOK + 1)
+				end()
+			else()
+				push(AverageAreaOfCellsInStackVector, NAN)
+				push(AverageAreaOfCellsInStackStddevVector, NAN)
+				push(AverageNumberOfSpotsPerCellVector, NAN)
+				push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+				push(PercentageCellAreaInPictureVector, NAN)
+				Set(BadStacks = BadStacks + 1)
+			end()
+			push( StacksUsed, _StackCounter )
+		else()  //steps for stacks # 2...oo	
+			push( NumberOfCellsInStackVector, leafcells.count)
+			push(NumberOfSpotsInStackVector, SpotsFiltered.count)	
+			push(EntireNumberOfSpotsInStackVector, EntireNumberOfSpotsInStack)
+			if(PercentageCellAreaInPicture > 0.3)
+				push(SpotsPerValidAreaVector, SpotsPerValidArea)
+			else()
+				push(SpotsPerValidAreaVector, NAN)
+			end()
+			if(SpotsFiltered.count > 0)
+				set(PercentageOfValidSpots = (100 * (1.0 * SpotsFiltered.count)/((1.0 * SpotsFiltered.count) + (1.0 * BigCellSpots.count))))
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			else()
+				set(PercentageOfValidSpots = 0.0)
+				push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+			end()
+			if(PercentageOfValidSpots > 25)
+				push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
+				push(AverageAreaOfCellsInStackStddevVector, leafcells.SearchRegionArea.stddev)
+				push(AverageNumberOfSpotsPerCellVector, leafcells.NumberOfSpots.mean)
+				push(AverageNumberOfSpotsPerCellStddevVector, leafcells.NumberOfSpots.stddev)
+				push(PercentageCellAreaInPictureVector, PercentageCellAreaInPicture)
+				if(all_VarsOK == 0)
+					set(all_LeafCells=LeafCells)
+					set(all_SpotsFiltered=SpotsFiltered)
+					set(all_ObjectsType2=ObjectsType2)
+					//set(all_Haustoria=Haustoria)
+					set(all_Stomata=Stomata)
+					set(all_Gaps=Gaps)
+					set(all_VarsOK = all_VarsOK + 1)
+				else()
+					AddObjects(LeafCells, objects=all_LeafCells, CheckOverlap=no) 
+					set(all_LeafCells=objects)  // Renames output from AddObjects()
+					AddObjects(SpotsFiltered, objects=all_SpotsFiltered, CheckOverlap=no) 
+					set(all_SpotsFiltered=objects)
+					AddObjects(ObjectsType2, objects=all_ObjectsType2, CheckOverlap=no) 
+					set(all_ObjectsType2=objects)
+					//AddObjects(Haustoria, objects=all_Haustoria, CheckOverlap=no) 
+					//set(all_Haustoria=objects)
+					AddObjects(Stomata, objects=all_Stomata, CheckOverlap=no) 
+					set(all_Stomata=objects)
+					AddObjects(Gaps, objects=all_Gaps, CheckOverlap=no) 
+					set(all_Gaps=objects)		
+				end()
+			else()
+				push(AverageAreaOfCellsInStackVector, NAN)
+				push(AverageAreaOfCellsInStackStddevVector, NAN)
+				push(AverageNumberOfSpotsPerCellVector, NAN)
+				push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+				push(PercentageCellAreaInPictureVector, NAN)
+				set(BadStacks = BadStacks + 1)
+			end()
+			push( StacksUsed, _StackCounter )
+		end()
+	else()  //if single stack
+		push( NumberOfCellsInStackVector, leafcells.count)
+		push(NumberOfSpotsInStackVector, SpotsFiltered.count)
+		push(EntireNumberOfSpotsInStackVector, EntireNumberOfSpotsInStack)
+		if(PercentageCellAreaInPicture > 0.3)
+			push(SpotsPerValidAreaVector, SpotsPerValidArea)
+		else()
+			push(SpotsPerValidAreaVector, NAN)
+		end()
+		if(SpotsFiltered.count > 0)
+			set(PercentageOfValidSpots = (100 * (1.0 * SpotsFiltered.count)/((1.0 * SpotsFiltered.count) + (1.0 * BigCellSpots.count))))
+			push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+		else()
+			set(PercentageOfValidSpots = 0.0)
+			push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
+		end()
+		if(SpotsFiltered.count > 0)
+			if(PercentageOfValidSpots > 25)
+				push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
+				push(AverageAreaOfCellsInStackStddevVector, leafcells.SearchRegionArea.stddev)
+				push(AverageNumberOfSpotsPerCellVector, leafcells.NumberOfSpots.mean)
+				push(AverageNumberOfSpotsPerCellStddevVector, leafcells.NumberOfSpots.stddev)
+				push(PercentageCellAreaInPictureVector, PercentageCellAreaInPicture)
+			else()
+				Set(BadStacks = BadStacks + 1)
+				push(AverageAreaOfCellsInStackVector, NAN)
+				push(AverageAreaOfCellsInStackStddevVector, NAN)
+				push(AverageNumberOfSpotsPerCellVector, NAN)
+				push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+				push(PercentageCellAreaInPictureVector, NAN)
+			end()
+		else()
+			push(AverageAreaOfCellsInStackVector, NAN)
+			push(AverageAreaOfCellsInStackStddevVector, NAN)
+			push(AverageNumberOfSpotsPerCellVector, NAN)
+			push(AverageNumberOfSpotsPerCellStddevVector, NAN)
+		end()
+		set(all_LeafCells=LeafCells)
+		set(all_SpotsFiltered=SpotsFiltered)
+		set(all_ObjectsType2=ObjectsType2)
+		//set(all_Haustoria=Haustoria)
+		set(all_Stomata=Stomata)
+		set(all_Gaps=Gaps)
+		push( StacksUsed, _StackCounter )
+	end()  // end of single stack / whole well contraint	
+	//	set(all_LeafCells=LeafCells) // The first evaluated field
+	//	set(all_SpotsFiltered=SpotsFiltered)
+	//	set(all_ObjectsType2=ObjectsType2)
+	//	//set(all_Haustoria=Haustoria)
+	//	set(all_Stomata=Stomata)
+	//	set(all_Gaps=Gaps)
+	//end()	  //end of loop over stacks
+	delete(wholecells)
+end() // end of the foreach loop over stacks
+if(all_VarsOK == 0)
+	set(all_LeafCells=LeafCells)
+	set(all_SpotsFiltered=SpotsFiltered)
+	set(all_ObjectsType2=ObjectsType2)
+	//set(all_Haustoria=Haustoria)
+	set(all_Stomata=Stomata)
+	set(all_Gaps=Gaps)
+end()
+
+
+
+// REPORTS SPOT DETECTION  OUTPUT PARAMETERS  
+if (InvalidStacks<=EndStack-StartStack) 
+	// At least one field was analysed and we have an object list
+	set(OP_NumberOfLeafCells = all_LeafCells.count)
+	set(OP_NumberOfSpots = all_SpotsFiltered.count)
+	//set(OP_NumberOfHaustoria = all_Haustoria.count)
+	set(OP_NumberOfStomata=all_Stomata.count)
+	set(OP_NumberOfGaps = all_Gaps.count)
+	set(OP_SpotAverageIntensity=all_SpotsFiltered.intensity.mean)
+	set(OP_SpotAverageArea=all_SpotsFiltered.area.mean)
+	set(OP_SpotTotalSignal=all_SpotsFiltered.IntegratedSpotSignal.sum)
+	set(OP_SpotTotalSignal_backgroundsubtracted=all_SpotsFiltered.IntegratedSpotSignal_backgroundsubtracted.sum)
+	set(OP_SpotAverageLength=all_SpotsFiltered.FullLength.mean)
+	set(OP_SpotAverageHalfWidth=all_SpotsFiltered.HalfWidth.mean)
+	set(OP_SpotAverageWidth2LengthRatio=all_SpotsFiltered.Width2LengthRatio.mean)
+	set(OP_SpotAverageWidth2LengthRatioStddev=all_SpotsFiltered.Width2LengthRatio.stddev)
+	set(OP_SpotAverageRoundness=all_SpotsFiltered.RoundnessCorrected.mean)
+	set(OP_SpotAverageRoundnessStddev=all_SpotsFiltered.RoundnessCorrected.stddev)
+	set(OP_SpotAverageContrast=all_SpotsFiltered.Contrast.mean)
+	set(OP_SpotAverageContrastStddev=all_SpotsFiltered.Contrast.stddev)
+	set(OP_SpotAveragePeakIntensity=all_SpotsFiltered.PeakIntensity.mean)
+	set(OP_TotalCellArea=all_LeafCells.SearchRegion_area.sum)
+	set(OP_TotalCellAreaStandardDeviation=all_LeafCells.SearchRegion_area.stddev)
+	
+	if(OP_NumberOfLeafCells>0)
+		set(OP_NumberOfSpotsPerCell=(1.0*OP_NumberOfSpots)/(1.0*OP_NumberOfLeafCells))
+	else()
+		set(OP_NumberOfSpotsPerCell=NAN)
+	end()
+	if(OP_TotalCellArea>0)
+		set(OP_NumberOfSpotsPerArea=(1.0*OP_NumberOfSpots)/(1.0*OP_TotalCellArea))
+		set(OP_SpotTotalSignalPerArea=(1.0*OP_SpotTotalSignal)/(1.0*OP_TotalCellArea))
+		set(OP_SpotTotalSignalPerArea_backgroundsubtracted=(1.0*OP_SpotTotalSignal_backgroundsubtracted)/(1.0*OP_TotalCellArea))
+		set(OP_AverageCellArea=(1.0*OP_TotalCellArea)/(1.0*OP_NumberOfLeafCells))
+	else()
+		set(OP_NumberOfSpotsPerArea=NAN)
+		set(OP_SpotTotalSignalPerArea=NAN)
+		set(OP_SpotTotalSignalPerArea_backgroundsubtracted=NAN)
+		set(OP_AverageCellArea=NAN)
+	end()
+	
+else()
+	// NO valid stacks
+	set(OP_NumberOfSpots = NAN)
+	set(OP_NumberOfLeafCells = NAN)
+	//set(OP_NumberOfHaustoria = NAN)
+	set(OP_NumberOfStomata=NAN)
+	set(OP_NumberOfGaps=NAN)
+	set(OP_NumberOfSpotsPerCell=NAN)
+
+	set(OP_SpotAverageIntensity= NAN)
+	set(OP_SpotAverageArea= NAN)
+	set(OP_SpotTotalSignal= NAN)
+	set(OP_SpotTotalSignal_backgroundsubtracted= NAN)
+	set(OP_SpotAverageLength= NAN)
+	set(OP_SpotAverageHalfWidth= NAN)
+	set(OP_SpotAverageWidth2LengthRatio= NAN)
+	set(OP_SpotAverageWidth2LengthRatioStddev= NAN)
+	set(OP_SpotAverageRoundness= NAN)
+	set(OP_SpotAverageRoundnessStddev= NAN)
+	set(OP_SpotAverageContrast= NAN)
+	set(OP_SpotAverageContrastStddev= NAN)
+	set(OP_SpotAveragePeakIntensity= NAN)
+	set(OP_TotalCellArea= NAN)
+
+	set(OP_NumberOfSpotsPerArea= NAN)
+	set(OP_SpotTotalSignalPerArea= NAN)
+	set(OP_SpotTotalSignalPerArea_backgroundsubtracted= NAN)
+end()
+
+// REPORTS ADDITIONAL OUTPUTS  
+set(OP_StackCount = StackCount) // Total number of image fields
+set(OP_ValidStacks = StackCount - InvalidStacks) // Number of Valid Image fields is determined
+
+set( vectorPos = 0 )
+if(all_LeafCells.count > 0)
+	ForEach(1..StackCount)
+		output( NumberOfCellsInStackVector[ vectorPos ], "Number of valid Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output( NumberOfSpotsInStackVector[ vectorPos ], "Number of valid Spots in Stack # " & StacksUsed[ vectorPos ] )
+		output( EntireNumberOfSpotsInStackVector[ vectorPos ], "Number of Spots in and out of Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output( PercentageOfValidSpotsVector[ vectorPos ], "Percents of inner Spots in Stack # " & StacksUsed[ vectorPos ] )
+		output( AverageAreaOfCellsInStackVector[ vectorPos ], "Average Area of Cells in Stack #" & StacksUsed[ vectorPos ] )
+		output( AverageAreaOfCellsInStackStddevVector[ vectorPos ], "Average Area of Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+		output( PercentageCellAreaInPictureVector[ vectorPos ], "Percents of found Cell Area in Stack # " & StacksUsed[ vectorPos ] )
+		output( AverageNumberOfSpotsPerCellVector[ vectorPos ], "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output( AverageNumberOfSpotsPerCellStddevVector[ vectorPos ], "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+		output( SpotsPerValidAreaVector[ vectorPos ], "Average Number of Spots per recognized Area in Stack # " & StacksUsed[ vectorPos ] )
+		set(vectorPos = vectorPos + 1 )
+	end()
+else()
+	ForEach(1..StackCount)
+		output(NAN,"Number of valid Cells in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Number of valid Spots in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Number of Spots in and out of Cells in Stack # " & StacksUsed[ vectorPos ] )
+		output(NAN, "Percents of inner Spots in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Area of Cells in Stack #" & StacksUsed[ vectorPos ])
+		output(NAN, "Average Area of Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Percents of found Cell Area in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ])
+		output(NAN, "Average Number of Spots per recognized Area in Stack # " & StacksUsed[ vectorPos ])
+		set(vectorPos = vectorPos + 1 )
+	end()
+end()
+	
+
+//ForEach(NumberOfCellsInStackVector)
+//	output( i, "Number of Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(NumberOfSpotsInStackVector)
+//	output( i, "Number of Spots in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageAreaOfCellsInStackVector)
+//	output( i, "Average Area of Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageAreaOfCellsInStackStddevVector)
+//	output( i, "Average Area of Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageNumberOfSpotsPerCellVector)
+//	output( i, "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(AverageNumberOfSpotsPerCellStddevVector)
+//	output( i, "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(NumberOfOuterSpotsInStackVector)
+//	output( i, "Number of Spots out of recognized Cells in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(PercentageOfValidSpotsVector)
+//	output( i, "Percents of inner Spots in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+//set( vectorPos = 0 )
+//ForEach(PercentageCellAreaInPictureVector)
+//	output( i, "Percents of found Cell Area in Stack # " & StacksUsed[ vectorPos ] )
+//	set( vectorPos = vectorPos + 1 )
+//end()	
+
+
+output(OP_NumberOfLeafCells, "Number of Leaf Cells in whole Well")
+if(all_LeafCells.count > 0)
+	output(all_LeafCells.SearchRegionArea.mean, "Average Cell Area in whole Well")
+	output(all_LeafCells.SearchRegionArea.stddev, "Average Cell Area in whole Well - Standard Deviation")
+else()
+	output(0, "Average Cell Area in whole Well")
+	output(0, "Average Cell Area in whole Well - Standard Deviation")
+end()
+output(OP_NumberOfSpots, "Number of Spots in whole Well")
+if(all_SpotsFiltered.count > 0)
+	output(all_LeafCells.NumberOfSpots.mean, "Average Number of Spots per Cell in whole Well")
+	output(all_LeafCells.NumberOfSpots.stddev, "Average Number of Spots per Cell in whole Well - Standard Deviation")
+else()
+	output(0, "Average Number of Spots per Cell in whole Well")
+	output(0, "Average Number of Spots per Cell in whole Well - Standard Deviation")
+end()
+output(OP_TotalCellArea, "Total Cell Area in Well")
+set(OP_PercentageValidStacks = (100 * (1.0 * OP_ValidStacks) / (1.0 * OP_StackCount)))
+if(OP_ValidStacks > 0)
+	set(PercentageOfTotalCellAreaOverAllValidStacks = (100 * (1.0 * all_LeafCells.SearchRegionArea.sum) / (1.0 * OP_ValidStacks * 357760)))
+else()
+	set(PercentageOfTotalCellAreaOverAllValidStacks = 0)
+end()
+output(PercentageOfTotalCellAreaOverAllValidStacks, "Percentage of total Cell Area in Well")
+
+//output(OP_NumberOfHaustoria, "Number of Haustoria")
+output(OP_NumberOfStomata, "Number Of Stomata")
+//Output(OP_NumberOfGaps, "Number Of gaps between leaf cells")
+
+//output(OP_NumberOfSpotsPerArea, "Number of spots per area")
+//output(OP_NumberOfSpotsPerCell, "Average Number of spots per cell")
+
+//output(OP_SpotTotalSignalPerArea, "Total integrated spot signal per area")
+//output(OP_SpotTotalSignalPerArea_backgroundsubtracted, "Total integrated spot signal per area background subtracted")
+
+output(OP_SpotAverageIntensity, "Average Intensity of Spots")
+output(OP_SpotAverageArea, "Average Area of Spots")
+//output(OP_SpotTotalSignal, "Total integrated spot signal, over all spots")
+//output(OP_SpotTotalSignal_backgroundsubtracted, "Total integrated spot signal background subtracted, over all spots")
+output(OP_SpotAverageLength, "Average Length of Spots")
+output(OP_SpotAverageHalfWidth, "Average Half Width of Spots")
+output(OP_SpotAverageWidth2LengthRatio, "Average Width to Length Ratio of Spots")
+output(OP_SpotAverageWidth2LengthRatioStddev, "Average Width to Length Ratio of Spots - Standard Deviation")
+output(OP_SpotAverageRoundness, "Average Roundness of Spots")
+output(OP_SpotAverageRoundnessStddev, "Average Roundness of Spots - Standard Deviation")
+output(OP_SpotAverageContrast, "Average Contrast of Spots")
+output(OP_SpotAverageContrastStddev, "Average Contrast of Spots - Standard Deviation")
+output(OP_SpotAveragePeakIntensity, "Average Peak Intensity of Spots")
+//if(StackNo<1)
+	//output(OP_AverageCellArea, "Average Cell Area")
+	//output(OP_TotalCellAreaStandard Deviation, "Total Cell Area Standard Deviation")
+//end()
+output(OP_StackCount, "Total number of Stacks analyzed in Well")
+output(OP_ValidStacks, "Number of valid Stacks in Well")    
+set(OP_PercentageValidStacks = (100 * (1.0 * OP_ValidStacks) / (1.0 * OP_StackCount)))
+output(OP_PercentageValidStacks, "Percentage of valid Stacks in Well")
+
