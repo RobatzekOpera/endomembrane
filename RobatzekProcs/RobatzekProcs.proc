@@ -887,8 +887,8 @@ thresholdxx(4, Image=Image1)
 		end()
 	end()
 	set(keepobjects = objects)
-	objectfilter(body.area<100000)
-	objectfilter(body.area>400)
+	objectfilter(body.area<40000)
+	objectfilter(body.area>800)
 	set(LeafCells=objects)
 	set(objects = keepobjects)
 	objectfilter(body.area >=40000)
@@ -1097,7 +1097,7 @@ bool debugImages =NO in "YES- processed images are depicted. No- processed image
 objectlist SpotsFiltered out "List of the classified spots with the calculated attributes"
 ) Robatzek Packages "Detects the actual spot locations by the initial list. Creates a new list and calculates attributes like area, contrast, width, length etc and thereupon classifies/filters the spots."
 {
-		input(spotMinimumArea, 1, "SpotMinimumArea","i","Minimum allowed area for spots. Objects with area less than the limit are discarded.")
+input(SpotMinimumArea, 1, "SpotMinimumArea", "i", "Minimum allowed area for spots. Objects with area less than the limit are discarded.")
 		input(SpotMinimumContrast, 0.18, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
 		input(SpotMinimumRoundness, 0.1, "SpotMinimumRoundness", "d", "Minimum allowed roundness parameter for spots. Objects with the parameter value less than the limit are discarded.")
 		input(MinimumWidth2LengthRatio, 0.5, "SpotMinimumWidth2LengthRatio","d", "Minimum allowed width to length ratio for spots. Objects with the ratio below the limit are discarded.")
