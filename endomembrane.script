@@ -59,15 +59,11 @@
 input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
 input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
 input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
-input(ShowIllustrations,YES, "ShowIllustrations","y","YES- Output illustrations are depicted. No- Output illustrations are not shown.")
+input(ShowIllustrations, YES, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
+input(debugImages,NO, "Debug Using Images", "y", "YES- all intermediary images are shown.")
 
 input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
-comment(
-input(spotMinimumArea, 21, "SpotMinimumArea","i","Minimum allowed area for spots. Objects with area less than the limit are discarded.")
-input(SpotMinimumContrast, 0.25, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
-input(SpotMinimumRoundness, 0.65, "SpotMinimumRoundness", "d", "Minimum allowed roundness parameter for spots. Objects with the parameter value less than the limit are discarded.")
-input(MinimumWidth2LengthRatio, 0.5, "SpotMinimumWidth2LengthRatio","d", "Minimum allowed width to length ratio for spots. Objects with the ratio below the limit are discarded.")
-)
+
 // READS IN IMAGES
 Singlewell(compact=yes)
 
@@ -97,15 +93,15 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	set(IM_projected2=result)
 	////////////////////////////////////////////////////////////////////////////////////////
 		
-	RobatzekProcs::LeafCellsDetection(IM_projected1)
+	RobatzekProcs::LeafCelsDetection(IM_projected1)
 	RobatzekProcs::DetectType2Objects(IM_projected1, Lines,LeafCells)
-	///////////////////////////////////////////////////// Convolution before spot detection //////////////////////////
+	////////Convolution before spot detection ////////////
 	// added by kurt stueber 2006-09-08 //
 	//convolutionmask("Disk",3)
 	//convolution(image=IM_projected2, faster=yes)
 	//set(IM_projected2=image)
 
-	///////////////////////////////////////////////////// Spot detection
+	/////////Spot detection///////
 	// Creates the SearchRegion, where the spots are searched - for too big Cells
 	CalcErosion(1,objects=BigLeafCells)
 	set(BigLeafCells=objects)
@@ -115,8 +111,7 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	Set(BigLeafCells=objects)
 		
 	spot_detection_c_inner(IM_projected2 , BigLeafCells.SearchRegion, BigLeafCells, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
-	RobatzekProcs::SpotClassificationLeafCells()
-	
+	RobatzekProcs::SpotClassificationLeafCels()
 	set( BigCellSpots = SpotsFiltered )
 	//if(ShowIllustrations)
 		//imageview(BigCellSpots.border, "Outer Spots",image=IM_projected2, title = "Spots out of recognized Cell Borders", gamma=2.0)
@@ -135,11 +130,10 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	delete(spotcandidates,wholecells)
 		
 	// Detects the actual spot locations and attributes like area, contrast, width, length etc and classifies the spots and filters the spots.
-	RobatzekProcs::SpotClassificationLeafCells()
-	
+	RobatzekProcs::SpotClassificationLeafCels()
 	// HAUSTORIA CLASSIFICATION
 	//Detects the inital objects, outputs also statistics Line_mean and nuclei_quantile7
-	RobatzekProcs::Haustoria_detection(IM_projected1, Lines, showillustrations=no)
+	RobatzekProcs::Haustoria_detection(IM_projected1, Lines, debugImages)
 	
 	objectfilter(intensity>1.3*line_mean and intensity>nuclei_quantile7 and half_width>4 and lines_area<5 and  (Width2LengthRatio>0.45 or (intensity>1.4*line_mean and Width2LengthRatio>0.4)), objects=haustoria) 
 	set(Haustoria=Objects)
@@ -165,19 +159,25 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	set( corename = substr( imagefilename1, 1, namelength - 5 ) )
 	gamma( 2.0, image=IM_projected1)
 	set( Image_out = image)
-	writeimage( imagefile=corename & "_" & FirstZplane & "-" & LastZplane & ".png", image=Image_out, imageformat="png",  )
+	comment(writeimage(imagefile=corename & "_" & FirstZplane & "-" & LastZplane & ".png", image=Image_out, imageformat="png",))
+
 	//write( "\tpng\t" & corename & "_" & FirstZplane & "-" & LastZplane & ".png" , logfilename, "ascii", append=true )
-		
+	
+	//Final Images. Shows stomata and haustoria if any exist
 	if(showIllustrations)
 		imageview(IM_projected1, "Signal",image=IM_projected1, gamma=2.0)
 		if(SpotsFiltered.count>0)
-			imageview(Leafcells.border, "Cells " & _StackCounter, image=IM_projected1, title="Detected Leaf Cells in Stack # " & _StackCounter, gamma=2.0)
-			imageview(Leafcells.body, "Cells Area " & _StackCounter, image=IM_projected1,title="Detected Leaf Cells in Stack #" & _StackCounter, gamma=2.0)
+			imageview(Leafcells.border, "Cells - Stack " & _StackCounter, image=IM_projected1, title="Detected Leaf Cells in Stack # " & _StackCounter, gamma=2.0)
+			imageview(Leafcells.body, "Cells Area - Stack" & _StackCounter, image=IM_projected1,title="Detected Leaf Cells in Stack #" & _StackCounter, gamma=2.0)
 			//imageview(gaps.border, "Gaps",image=IM_projected1,title="Detected gaps between leaf cells",gamma=2.0)
-			//imageview(Stomata.border, "Stomata",image=IM_projected1,title="Detected Stomata",gamma=2.0)
-			//imageview(Haustoria.border,"Haustoria", image=IM_projected1, title="Detected Haustoria", gamma=2)
-			imageview(SpotsFiltered.border, "Spots " & _StackCounter, image=IM_projected1, title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
-			imageview(BigCellSpots.border, "Outer Spots " & _StackCounter, image=IM_projected1, title = "Spots out of recognized Cell Borders in Stack # " & _StackCounter, gamma=2.0)
+			if(stomata.count > 0)
+				imageview(Stomata.border, "Stomata - Stack " & _StackCounter, image=IM_projected1,title="Detected Stomata",gamma=2.0)
+			end()
+			if(Haustoria.count > 0)
+				imageview(Haustoria.border,"Haustoria - Stack " & _StackCounter, image=IM_projected1, title="Detected Haustoria", gamma=2)
+			end()
+			imageview(SpotsFiltered.border, "Spots - Stack " & _StackCounter, image=IM_projected1, title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
+			imageview(BigCellSpots.border, "Outer Spots - Stack " & _StackCounter, image=IM_projected1, title = "Spots out of recognized Cell Borders in Stack # " & _StackCounter, gamma=2.0)
 		else()
 			set(InvalidStacks=InvalidStacks+1)
 		end()
