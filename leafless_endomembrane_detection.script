@@ -1,0 +1,183 @@
+//*************************************************************************
+//  File Name:			leafless_endomembrane_detection.script
+//  Purpose: Detects spot-like features on leaf images, images from MPIZ-Ko"ln
+//					
+// 							EVOTEC  TECHNOLOGIES 
+//  						Olavi Ollikainen
+//  e-mail: 			Olavi.Ollikainen@evotec-technologies.com
+//	phone :			00 372 52 75 262
+//  With corrections from Kurt Stu"ber MPI Ko"ln
+//  phone:          +49 (0) 221 5062 120
+//  e-mail           stueber@mpiz-koeln.mpg.de
+//  With further modifications from Sebastian Schaaf MPIZ Ko"ln
+//  phone			+49 (0) 221 5062 323
+//	e-mail			schaaf@mpiz-koeln.mpg.de
+// Further modified by Matthew Beckers
+//							-This version simply detects spot-like features and ignores leaf cells
+// e-mail			Matthew.Beckers@tsl.ac.uk
+//*************************************************************************
+//
+// 				Output parameters:
+//													* Valid Spots in Stack
+//													* Average Number of Spots per recognized Area in Stack
+//
+//													* Number of Spots in whole Well
+//
+//													* Average Intensity of Spots
+//													* Average Area of Spots
+//													* Average Length of Spots
+//													* Average Half Width of Spots
+//													* Average Width to Length Ratio of Spots
+//													* Average Width to Length Ratio of Spots - Standard Deviation
+//													* Average Roundness of Spots
+//													* Average Roundness of Spots - Standard Deviation
+//													* Average Contrast of Spots
+//													* Average Contrast of Spots - Standard Deviation
+//													* Average Peak Intensity of Spots
+//
+//													* Total number of Stacks analyzed in Well
+//
+//*******************************************************************************************************************************
+
+// INPUT PARAMETERS
+input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
+input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
+input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
+input(ShowIllustrations, YES, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
+input(debugImages,NO, "Debug Using Images", "y", "YES- all intermediary images are shown.")
+input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
+
+// READS IN IMAGES
+Singlewell(compact=yes)
+
+// COUNTS FIELDS AND CONTROLS IF ALL IMAGES ARE PRESENT
+RobatzekProcs::ControlImageFieldsStackAC2(sourcedata, NumberOfChannels, ZplanesInStack, StackNo)
+set(InvalidStacks = 0)  //counts black/grey stacks without information
+set(BadStacks = 0)   //counts stacks with Signal but no recognized cells
+set(all_VarsOK = 0)
+
+// LOOP OVER IMAGE FIELDS
+Foreach(StartStack .. EndStack, "_StackCounter") 
+	// Assigns image names for the current field, IM_CH1 - first channel image, IM_CH2 - second channel image etc
+	RobatzekProcs::Assign_FirstLastZplane()
+	
+	// User script STARTS
+	set( imagefilename1 = SourceData.sourcefilename[0])
+	RobatzekProcs::CreateDataCubeWithControl()
+	RobatzekProcs::DataCubeProjectionCorrection()
+	
+	////// Projects maximum intensity for each x-y position from datacube to image
+	rearrange(datacube,vec(vec(0,0,1),vec(1,0,0),vec(0,1,0)), vec(datacube.depth, datacube.width,datacube.height), reduce="max")
+		
+	delete(datacube) 
+	set(IM_projected1=result)
+	set(IM_projected2=result)
+
+	// Detects the initial set of spots
+	spot_detection_c_inner(IM_projected2, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	delete(spotcandidates,wholecells)
+		
+	// Detects the actual spot locations and attributes like area, contrast, width, length etc and classifies the spots and filters the spots.
+	RobatzekProcs::SpotClassificationLeafCels()
+
+	// User script ENDS
+		
+	// Output sequence starts
+	push(EntireNumberOfSpotsInStackVector, SpotsFiltered.count)
+	push(SpotsFilteredVector, SpotsFiltered)
+	push(imageVector, IM_Projected1)
+	push(StacksUsed, _StackCounter )
+	delete(wholecells)
+
+	if(all_VarsOK == 0)
+		set(all_SpotsFiltered=SpotsFiltered)
+		set(all_VarsOK = all_VarsOK + 1)
+	else()
+		AddObjects(SpotsFiltered, objects=all_SpotsFiltered, CheckOverlap=no) 
+		set(all_SpotsFiltered=objects)
+	end()
+end() // end of the foreach loop over stacks
+
+// REPORTS SPOT DETECTION  OUTPUT PARAMETERS  
+if (InvalidStacks<=EndStack-StartStack) 
+	// At least one field was analysed and we have an object list
+	set(OP_NumberOfSpots = all_SpotsFiltered.count)
+	set(OP_SpotAverageIntensity=all_SpotsFiltered.intensity.mean)
+	set(OP_SpotAverageArea=all_SpotsFiltered.area.mean)
+	set(OP_SpotTotalSignal=all_SpotsFiltered.IntegratedSpotSignal.sum)
+	set(OP_SpotTotalSignal_backgroundsubtracted=all_SpotsFiltered.IntegratedSpotSignal_backgroundsubtracted.sum)
+	set(OP_SpotAverageLength=all_SpotsFiltered.FullLength.mean)
+	set(OP_SpotAverageHalfWidth=all_SpotsFiltered.HalfWidth.mean)
+	set(OP_SpotAverageWidth2LengthRatio=all_SpotsFiltered.Width2LengthRatio.mean)
+	set(OP_SpotAverageWidth2LengthRatioStddev=all_SpotsFiltered.Width2LengthRatio.stddev)
+	set(OP_SpotAverageRoundness=all_SpotsFiltered.RoundnessCorrected.mean)
+	set(OP_SpotAverageRoundnessStddev=all_SpotsFiltered.RoundnessCorrected.stddev)
+	set(OP_SpotAverageContrast=all_SpotsFiltered.Contrast.mean)
+	set(OP_SpotAverageContrastStddev=all_SpotsFiltered.Contrast.stddev)
+	set(OP_SpotAveragePeakIntensity=all_SpotsFiltered.PeakIntensity.mean)
+	
+else()
+	// NO valid stacks
+	set(OP_NumberOfSpots = NAN)
+	set(OP_NumberOfLeafCells = NAN)
+	set(OP_NumberOfStomata=NAN)
+	set(OP_NumberOfGaps=NAN)
+	set(OP_NumberOfSpotsPerCell=NAN)
+	set(OP_SpotAverageIntensity= NAN)
+	set(OP_SpotAverageArea= NAN)
+	set(OP_SpotTotalSignal= NAN)
+	set(OP_SpotTotalSignal_backgroundsubtracted= NAN)
+	set(OP_SpotAverageLength= NAN)
+	set(OP_SpotAverageHalfWidth= NAN)
+	set(OP_SpotAverageWidth2LengthRatio= NAN)
+	set(OP_SpotAverageWidth2LengthRatioStddev= NAN)
+	set(OP_SpotAverageRoundness= NAN)
+	set(OP_SpotAverageRoundnessStddev= NAN)
+	set(OP_SpotAverageContrast= NAN)
+	set(OP_SpotAverageContrastStddev= NAN)
+	set(OP_SpotAveragePeakIntensity= NAN)
+	set(OP_TotalCellArea= NAN)
+	set(OP_NumberOfSpotsPerArea= NAN)
+	set(OP_SpotTotalSignalPerArea= NAN)
+	set(OP_SpotTotalSignalPerArea_backgroundsubtracted= NAN)
+end()
+
+// REPORTS ADDITIONAL OUTPUTS  
+set(OP_StackCount = StackCount) // Total number of image fields
+set(OP_ValidStacks = StackCount - InvalidStacks) // Number of Valid Image fields is determined
+
+set( vectorPos = 0 )
+ForEach(1..StackCount)
+	output( EntireNumberOfSpotsInStackVector[ vectorPos ], "Number of Spots in Stack # " & StacksUsed[ vectorPos ] )
+	set(vectorPos = vectorPos + 1 )
+end()
+
+output(OP_NumberOfSpots, "Number of Spots in whole Well")
+
+output(OP_SpotAverageIntensity, "Average Intensity of Spots")
+output(OP_SpotAverageArea, "Average Area of Spots")
+output(OP_SpotAverageLength, "Average Length of Spots")
+output(OP_SpotAverageHalfWidth, "Average Half Width of Spots")
+output(OP_SpotAverageWidth2LengthRatio, "Average Width to Length Ratio of Spots")
+output(OP_SpotAverageWidth2LengthRatioStddev, "Average Width to Length Ratio of Spots - Standard Deviation")
+output(OP_SpotAverageRoundness, "Average Roundness of Spots")
+output(OP_SpotAverageRoundnessStddev, "Average Roundness of Spots - Standard Deviation")
+output(OP_SpotAverageContrast, "Average Contrast of Spots")
+output(OP_SpotAverageContrastStddev, "Average Contrast of Spots - Standard Deviation")
+output(OP_SpotAveragePeakIntensity, "Average Peak Intensity of Spots")
+output(OP_StackCount, "Total number of Stacks analyzed in Well")
+
+//Final Images.
+set(i = 0)
+set(_StackCounter = 0)
+foreach(StartStack .. EndStack, _StackCounter)
+	if(showIllustrations)
+		imageview(imageVector[i], "Signal - Stack "& _StackCounter,image=IM_projected1, gamma=2.0)
+		if(SpotsFilteredVector[i].count>0)
+			imageview(SpotsFilteredVector[i].border, "Spots - Stack " & _StackCounter, image=imageVector[i], title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
+		else()
+			set(InvalidStacks=InvalidStacks+1)
+		end() //end if spotsFiltered > 0
+	end()
+	set(i = i + 1)
+end()

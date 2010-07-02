@@ -62,7 +62,7 @@ input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a n
 input(ShowIllustrations, YES, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
 input(debugImages,NO, "Debug Using Images", "y", "YES- all intermediary images are shown.")
 input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
-
+input(BadStacksThreshold, 25, "Stack Rejection Threshold (%)", "i", "Percentage number of spots that must be within cells for Stack to be analysed")
 // READS IN IMAGES
 Singlewell(compact=yes)
 
@@ -171,7 +171,8 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 		push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
 	end()
 
-	if(PercentageOfValidSpots > 25)
+	//**Reject Stacks by the percentage of spots inside recognised cells**//
+	if(PercentageOfValidSpots > BadStacksThreshold)
 		push(BadStacksVector, 0)
 		push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
 		push(AverageAreaOfCellsInStackStddevVector, leafcells.SearchRegionArea.stddev)
@@ -301,7 +302,7 @@ if(all_LeafCells.count > 0)
 		output( AverageNumberOfSpotsPerCellVector[ vectorPos ], "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ] )
 		output( AverageNumberOfSpotsPerCellStddevVector[ vectorPos ], "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
 		output( SpotsPerValidAreaVector[ vectorPos ], "Average Number of Spots per recognized Area in Stack # " & StacksUsed[ vectorPos ] )
-		output(BadStacksVector[ vectorPos ], "Bad Stack for stack #"  & StacksUsed[ vectorPos ])
+		//output(BadStacksVector[ vectorPos ], "Bad Stack for stack #"  & StacksUsed[ vectorPos ])
 		set(vectorPos = vectorPos + 1 )
 		
 	end()
@@ -376,6 +377,7 @@ set(OP_PercentageValidStacks = (100 * (1.0 * OP_ValidStacks) / (1.0 * OP_StackCo
 output(OP_PercentageValidStacks, "Percentage of valid Stacks in Well")
 
 //BadStacks table
+Output(BadStacksThreshold, "Stack Rejection Threshold")
 set(i = 0)
 set(badstacks = vec())
 foreach(StartStack .. EndStack, _badstackcounter)

@@ -6,16 +6,26 @@
 Package(RobatzekProcs)
 
 proc Spot_Detection_MPIZ(
+	//**Positional Inputs**//
 	image SpotImage in " image with intensity information. Spots are detected by this image.",
 	string SearchRegion="SearchRegion" in "Name of the attribute in input list WholeCells, which specifies the regions where spots are searched. In case of the empty string \"\" spots are searched over the whole SpotImage and the input object list is ignored.",
 	bool debugImages =NO in "YES- processed images are depicted. No- processed images are not shown.",
 	bool ShowSearchRegionBorder=NO in "YES- Output illustration with SearchRegion borders is depicted. No- Output illustration with SearchRegion borders is not shown.",
 	bool ShowOutputParameters=YES in "YES- Output parameters are reported. No- Output Parameters are not reported.",
-
+	
+	//**Tuning Parameters**//
+	double SpotMinimumDistance = 3.0 in "Minimum allowed distance between two spot centers. Unit image pixel. Typical range 2.0 .. 5.0. Adjust by Illustration SpotSelection and Spots.",
+	double SpotPeakRadius =1.0 in "Radius of the disk, where the spot peak intensity is calculated. Default value 0 means that peak intensity corresponds to the intensity of the maximum point, value 1 means that peak intensity is found as average intensity over the region with radius 1 pixel around the maximum point, i.e. over the region with area 5 pixels. Typically 0 or 1.",      	
+	double SpotReferenceRadius = 8.0 in "Radius of Reference Region around the intensity maximum, i.e. around spot center. Typical range  2.0 .. 5.0.",
+	double SpotMinimumContrast = 0.4 in "Minimum allowed contrast between spot peak intensity and the reference intensity. The main spot selection parameter. Range from 0..1. Adjust parameter by illustrations  and Spots. If the parameter value is lowered the number of classified spots increases and vice versa.",
+	double SpotMinimumToCellIntensity = 1.0 in "Minimum allowed intensity ratio between Spot Peak Intensnity and the Average Intensity of the cell/object to which the spot is belongs. Range from 0..oo. Has smaller influence on the outputs than the main selection parameter SpotMinimumContrast. Adjust parameter by illustrations SpotSelection and Spots. If the parameter value is lowered the number of classified spots increases and vice versa.",
+	
+	//**Inout object list**//
 	objectlist WholeCells=none inout "Optional input object list, which defines the objects (e.g. ~cells) where the spots are searched. Output list contains numerical and geometrical spot attributes. Input list should involve the stencil-type attribute specified by the input SearchRegion. If the object list is not provided spots are searched over the whole image.",
 	objectlist SpotCandidates out "Output object list of spot candidates with calculated numerical and geometrical attributes.",
 	objectlist Spots out "Output object list of classified spots with calculated numerical and geometrical attributes.",
 
+	//**Output**//
 	double NumberOfSpotCandidates out "Number of spot candidates.",
 	double NumberOfSpots out "Number of detected spots.",
 	double SpotsPerObject out "Number of spots per object (i.e. number of spots per ~cell).",
@@ -28,11 +38,7 @@ proc Spot_Detection_MPIZ(
 
 ) spot detection, object recognition, Robatzek Packages "Spot detection procedure. Finds spots on SpotImage. Spot candidates are detected as local intensity maximums. Thereupon the spots are selected by contrast and intensity parameters. Proper spot detection input parameters can be found with the template script spot_detection_parameter_scanner.script (spot_detection_parameter_scanner_Acapella10.script for Acaplella 1.0). Opera multiple field spot images can be evaluated based on the template script Opera_multifields_spots.script. See more in Opera spot detection manual."
 {
-	input(SpotMinimumDistance,3.0 , "SpotMinimumDistance","d", "Minimum allowed distance between two spot centers. Unit image pixel. Typical range 2.0 .. 5.0. Adjust by Illustration SpotSelection and Spots.") 
-	input(SpotPeakRadius, 1.0, "SpotPeakRadius","d", "Radius of the disk, where the spot peak intensity is calculated. Default value 0 means that peak intensity corresponds to the intensity of the maximum point, value 1 means that peak intensity is found as average intensity over the region with radius 1 pixel around the maximum point, i.e. over the region with area 5 pixels. Typically 0 or 1.")                                                                                                                                                      
-	input(SpotReferenceRadius, 8.0,  "SpotReferenceRadius", "d", "Radius of Reference Region around the intensity maximum, i.e. around spot center. Typical range  2.0 .. 5.0.")	
-	input(SpotMinimumContrast,0.4, "SpotMinimumContrast", "d","Minimum allowed contrast between spot peak intensity and the reference intensity. The main spot selection parameter. Range from 0..1. Adjust parameter by illustrations  and Spots. If the parameter value is lowered the number of classified spots increases and vice versa.")
-	input(SpotMinimumToCellIntensity, 1.0, "SpotMinimumToCellIntensity","d","Minimum allowed intensity ratio between Spot Peak Intensnity and the Average Intensity of the cell/object to which the spot is belongs. Range from 0..oo. Has smaller influence on the outputs than the main selection parameter SpotMinimumContrast. Adjust parameter by illustrations SpotSelection and Spots. If the parameter value is lowered the number of classified spots increases and vice versa.") 
+
 	
 	if( SearchRegion!="" and defined("WholeCells"))
 		set(Objects_in=WholeCells)
@@ -67,6 +73,7 @@ proc Spot_Detection_MPIZ(
 	printf(printf_text)
 }
 
+
 proc CalcNodesLarge( 
 string SkeletonName="skeleton" in "Stencil in input list,  Nodes are found for this stencil", 
 objectlist objects inout "Input-output object list"
@@ -91,6 +98,7 @@ objectlist objects inout "Input-output object list"
 
 	set(kernel1=kernel0)
 	set(kernel1[1,0]=0)
+	set(kernel1.type = "mask")
 	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel1.vector)
 	set(image.factor=1)
 	mask(4,image=image)
@@ -98,6 +106,7 @@ objectlist objects inout "Input-output object list"
 	
 	set(kernel2=kernel0)
 	set(kernel2[2,1]=0)
+	set(kernel2.type = "mask")
 	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel2.vector)
 	set(image.factor=1)
 	mask(4,image=image)
@@ -105,6 +114,7 @@ objectlist objects inout "Input-output object list"
 	
 	set(kernel3=kernel0)
 	set(kernel3[1,2]=0)
+	set(kernel3.type = "mask")
 	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel3.vector)
 	set(image.factor=1)
 	mask(4,image=image)
@@ -112,6 +122,7 @@ objectlist objects inout "Input-output object list"
 	
 	set(kernel4=kernel0)
 	set(kernel4[0,1]=0)
+	set(kernel4.type = "mask")
 	convolution(image=IM_skeleton,mask=objects.stencil_temp.mask, faster=yes, convolutionkernel=kernel4.vector)
 	set(image.factor=1)
 	mask(4,image=image)
@@ -232,11 +243,13 @@ objectlist objects inout "Input-output object list"
 	set(M2=mask.image)
 	
 	carrypixels(image=m1,mask=M2.vector,data=0)
+	set(image.type="mask")
 	set(M_deadend0=image.vector)
 
 	convolution(image=objects.skeleton_largenodes.mask.image,mask=M_deadend0, faster=yes)
 	set(image.factor=1)
 	mask(1,image=image)
+	set(image.type = "mask")
 	set(M_deadend_type1=image.vector)
 	
 	//carrypixels(image=M_deadend0.image,mask=M_deadend_type1.vector,data=0)
@@ -249,6 +262,7 @@ objectlist objects inout "Input-output object list"
 	set(M_nodes_4n_mod=image.vector)
 	
 	set(kernel1=IM1)
+	set(kernel1.type = "mask")
 	set(kernel1[2,0]=0,kernel1[2,1]=0, kernel1[2,2]=0, kernel1[1,1]=0)
 	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel1.vector)
 	set(image.factor=1)
@@ -256,6 +270,7 @@ objectlist objects inout "Input-output object list"
 	set(M_deadend1=mask.image)
 	
 	set(kernel2=IM1)
+	set(kernel2.type = "mask")
 	set(kernel2[0,0]=0,kernel2[0,1]=0, kernel2[0,2]=0, kernel2[1,1]=0)
 	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel2.vector)
 	set(image.factor=1)
@@ -263,6 +278,7 @@ objectlist objects inout "Input-output object list"
 	set(M_deadend2=mask.image)
 	
 	set(kernel3=IM1)
+	set(kernel3.type = "mask")
 	set(kernel3[0,0]=0,kernel3[1,0]=0, kernel3[2,0]=0, kernel3[1,1]=0)
 	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel3.vector)
 	set(image.factor=1)
@@ -270,6 +286,7 @@ objectlist objects inout "Input-output object list"
 	set(M_deadend3=mask.image)
 	
 	set(kernel4=IM1)
+	set(kernel4.type = "mask")
 	set(kernel4[0,2]=0,kernel4[1,2]=0, kernel4[2,2]=0, kernel4[1,1]=0)
 	convolution(image=IM_skeleton_not,mask=M_nodes_4n_mod, faster=yes, convolutionkernel=kernel4.vector)
 	set(image.factor=1)
