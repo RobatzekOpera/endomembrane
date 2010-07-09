@@ -74,47 +74,48 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	set(IM_projected2=result)
 
 	// Detects the initial set of spots
-	spot_detection_c_inner(IM_projected2, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	//spot_detection_c_inner(IM_projected2, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	RobatzekProcs::Spot_Detection_MPIZ(IM_projected2, "", debugImages, spotMinimumDistance = 2, SpotPeakRadius = 0, SpotReferenceRadius = 6, SpotMinimumContrast = 0.4)
+	
 	delete(spotcandidates,wholecells)
 		
 	// Detects the actual spot locations and attributes like area, contrast, width, length etc and classifies the spots and filters the spots.
-	RobatzekProcs::SpotClassificationLeafCels()
+	RobatzekProcs::SpotAttributeCalculation(IM_projected1, spots)
 
 	// User script ENDS
 		
 	// Output sequence starts
-	push(EntireNumberOfSpotsInStackVector, SpotsFiltered.count)
-	push(SpotsFilteredVector, SpotsFiltered)
+	push(EntireNumberOfSpotsInStackVector, Spots.count)
+	push(SpotsVector, Spots)
 	push(imageVector, IM_Projected1)
 	push(StacksUsed, _StackCounter )
 	delete(wholecells)
 
 	if(all_VarsOK == 0)
-		set(all_SpotsFiltered=SpotsFiltered)
+		set(all_Spots=Spots)
 		set(all_VarsOK = all_VarsOK + 1)
 	else()
-		AddObjects(SpotsFiltered, objects=all_SpotsFiltered, CheckOverlap=no) 
-		set(all_SpotsFiltered=objects)
+		AddObjects(Spots, objects=all_Spots, CheckOverlap=no | all_Spots=objects) 
 	end()
 end() // end of the foreach loop over stacks
 
 // REPORTS SPOT DETECTION  OUTPUT PARAMETERS  
 if (InvalidStacks<=EndStack-StartStack) 
 	// At least one field was analysed and we have an object list
-	set(OP_NumberOfSpots = all_SpotsFiltered.count)
-	set(OP_SpotAverageIntensity=all_SpotsFiltered.intensity.mean)
-	set(OP_SpotAverageArea=all_SpotsFiltered.area.mean)
-	set(OP_SpotTotalSignal=all_SpotsFiltered.IntegratedSpotSignal.sum)
-	set(OP_SpotTotalSignal_backgroundsubtracted=all_SpotsFiltered.IntegratedSpotSignal_backgroundsubtracted.sum)
-	set(OP_SpotAverageLength=all_SpotsFiltered.FullLength.mean)
-	set(OP_SpotAverageHalfWidth=all_SpotsFiltered.HalfWidth.mean)
-	set(OP_SpotAverageWidth2LengthRatio=all_SpotsFiltered.Width2LengthRatio.mean)
-	set(OP_SpotAverageWidth2LengthRatioStddev=all_SpotsFiltered.Width2LengthRatio.stddev)
-	set(OP_SpotAverageRoundness=all_SpotsFiltered.RoundnessCorrected.mean)
-	set(OP_SpotAverageRoundnessStddev=all_SpotsFiltered.RoundnessCorrected.stddev)
-	set(OP_SpotAverageContrast=all_SpotsFiltered.Contrast.mean)
-	set(OP_SpotAverageContrastStddev=all_SpotsFiltered.Contrast.stddev)
-	set(OP_SpotAveragePeakIntensity=all_SpotsFiltered.PeakIntensity.mean)
+	set(OP_NumberOfSpots = all_Spots.count)
+	set(OP_SpotAverageIntensity=all_Spots.intensity.mean)
+	set(OP_SpotAverageArea=all_Spots.area.mean)
+	set(OP_SpotTotalSignal=all_Spots.IntegratedSpotSignal.sum)
+	set(OP_SpotTotalSignal_backgroundsubtracted=all_Spots.IntegratedSpotSignal_backgroundsubtracted.sum)
+	set(OP_SpotAverageLength=all_Spots.FullLength.mean)
+	set(OP_SpotAverageHalfWidth=all_Spots.HalfWidth.mean)
+	set(OP_SpotAverageWidth2LengthRatio=all_Spots.Width2LengthRatio.mean)
+	set(OP_SpotAverageWidth2LengthRatioStddev=all_Spots.Width2LengthRatio.stddev)
+	set(OP_SpotAverageRoundness=all_Spots.RoundnessCorrected.mean)
+	set(OP_SpotAverageRoundnessStddev=all_Spots.RoundnessCorrected.stddev)
+	set(OP_SpotAverageContrast=all_Spots.Contrast.mean)
+	set(OP_SpotAverageContrastStddev=all_Spots.Contrast.stddev)
+	set(OP_SpotAveragePeakIntensity=all_Spots.PeakIntensity.mean)
 	
 else()
 	// NO valid stacks
@@ -173,11 +174,11 @@ set(_StackCounter = 0)
 foreach(StartStack .. EndStack, _StackCounter)
 	if(showIllustrations)
 		imageview(imageVector[i], "Signal - Stack "& _StackCounter,image=IM_projected1, gamma=2.0)
-		if(SpotsFilteredVector[i].count>0)
-			imageview(SpotsFilteredVector[i].border, "Spots - Stack " & _StackCounter, image=imageVector[i], title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
+		if(SpotsVector[i].count>0)
+			imageview(SpotsVector[i].border, "Spots - Stack " & _StackCounter, image=imageVector[i], title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
 		else()
 			set(InvalidStacks=InvalidStacks+1)
-		end() //end if spotsFiltered > 0
+		end() //end if Spots > 0
 	end()
 	set(i = i + 1)
 end()

@@ -1133,6 +1133,7 @@ input(SpotMinimumArea, 1, "SpotMinimumArea", "i", "Minimum allowed area for spot
 		
 		calcerosion(-2,spotcenters)
 		calcerosion(-12,spotcenters_eroded,restrictivestencil=m10, numberofsteps=3)
+		
 		CalcFillStencil_MPIZ(StencilName="spotcenters_eroded_eroded")
 		
 		RenameAttr(body2=spotcenters_eroded_eroded_filled)
@@ -1166,9 +1167,12 @@ input(SpotMinimumArea, 1, "SpotMinimumArea", "i", "Minimum allowed area for spot
 		if(debugImages)
 			imageview(objects.body2_border, "InitialSpots", image=IM_projected1, title="Spot candidates after the initial detection", gamma=2.0)
 		end()
+		//set(objects1 = objects)
 		ObjectFilter(HalfWidth>0.9)
+		//ObjectFilter(!HalfWidth>0.9, objects = objects1 | objects1 = objects)
 		//ObjectFilter(HalfWidth>2.01)
 		ObjectFilter(Width2LengthRatio>MinimumWidth2LengthRatio or (Width2LengthRatio>0.8*MinimumWidth2LengthRatio and body2_roundnesscorrected>1.1*SpotMinimumRoundness ) or (body4_Width2LengthRatio>0.6 and body4_RoundnessCorrected>0.8 and AreaRatio42>0.75) )
+		//ObjectFilter(! (Width2LengthRatio>MinimumWidth2LengthRatio or (Width2LengthRatio>0.8*MinimumWidth2LengthRatio and //body2_roundnesscorrected>1.1*SpotMinimumRoundness ) or (body4_Width2LengthRatio>0.6 and body4_RoundnessCorrected>0.8 and //AreaRatio42>0.75)) | objects1 = objects )
 		if(debugImages)
 			//imageview(objects.body2_border, "WidthLength", image=IM_projected1, title="Spots after filtering by  Width and Width2LengthRatio", gamma=2.0)
 		end()
@@ -1333,6 +1337,8 @@ proc CalcRoundnessCorrected(
 	CalcArea(CurrentStencilX)
 	CalcBorder(CurrentStencilX)
 	CalcArea(CurrentStencilX_border)
+
+	//**Roundness Calculation**//
 	CalcAttr(RoundnessCorrected, 3.544*sqrt(1.0*CurrentStencilX_Area-CurrentStencilX_border_area/2.0)/CurrentStencilX_border_area-0.1, autorecalc=no)
 
 	if(StencilName=="body")
@@ -1400,4 +1406,62 @@ int LastZplane out
 {
 	set(FirstZplane=(_StackCounter-1)*ImagesINOneStack+1)
 	set(LastZplane=(_StackCounter)*ImagesINOneStack-NumberOfChannels+1)
+}
+
+proc SpotAttributeCalculation(
+image IM_projected1 in "Input image with intensity information. Spots are detected by this image",
+objectlist Spots in "Input list of the initial spots",
+bool debugImages =NO in "YES- processed images are depicted. No- processed images are not shown.",
+objectlist Spots out "List of the classified spots with the calculated attributes"
+) Robatzek Packages " calculates attributes like area, contrast, width, length etc "
+{
+//input(SpotMinimumArea, 1, "SpotMinimumArea", "i", "Minimum allowed area for spots. Objects with area less than the limit are discarded.")
+	//	input(SpotMinimumContrast, 0.18, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
+	//	input(SpotMinimumRoundness, 0.1, "SpotMinimumRoundness", "d", "Minimum allowed roundness parameter for spots. Objects with the parameter value less than the limit are discarded.")
+	//	input(MinimumWidth2LengthRatio, 0.5, "SpotMinimumWidth2LengthRatio","d", "Minimum allowed width to length ratio for spots. Objects with the ratio below the limit are discarded.")
+
+	    //**Attribute calculations on the resulting bodies**//
+		calcborder(body, objects = spots)
+		CalcArea(body)
+		//stencil2objects(objects.body)
+		CalcWidthLength(objects)
+		CalcAttr(Width2LengthRatio, iif(Full_Length>0,(2.0*Half_Width/Full_Length),0.0))
+		CalcRoundnessCorrected(Body, objects = objects)
+
+		//CalcAttr(AreaRatio42,iif(Body2_area>0, (1.0*Body4_area)/(1.0*Body2_area),0.0))
+		
+		CalcIntensity(Body, image=IM_projected1, CalcStdDev = YES, objects = objects)
+		CalcStat("max",stencil=body, image=IM_projected1)
+		
+		CalcAttr(th, intensity+0.3*(max-intensity)+2.0*sqrt(intensity))
+
+		// Cleanes the list, renames the attributes etc
+		//store created list in spots memblock
+		set(spots = objects)
+
+		//create a clean objectlist from body stencil
+		Stencil2Objects(objects.body)
+		//Add Indispensible stencils
+		SetAttr(ReferenceRegions, Spots.ReferenceRegions)
+		SetAttr(Center_Spot, Spots.Center_spot)
+
+		CalcIntensity(image=IM_projected1)
+		CalcStat("Sum",AttrName="IntegratedSpotSignal",Stencil=Body,image=IM_projected1)
+		Setattr(Area,Spots.area)
+		Setattr(RoundnessCorrected,Spots.RoundnessCorrected)
+		Setattr(Width2lengthRatio,Spots.Width2lengthRatio)
+		Setattr(FullLength,Spots.Full_Length)
+		Setattr(HalfWidth,Spots.Half_Width)
+		Setattr(Contrast, Spots.contrast)
+		Setattr(PeakIntensity, Spots.max)
+		
+		//SetAttr(ReferenceRegions_intensity, ReferenceRegions_intensity)
+		SetAttr(ReferenceIntensity, Spots.ReferenceRegions_intensity)
+		CalcArea(ReferenceRegions)
+		SetAttr(CellIntensity, Spots.CellIntensity)
+		CalcAttr(SpotToCellIntensity, (1.0*PeakIntensity)/(1.0*CellIntensity))
+		CalcAttr(IntegratedSpotSignal_Backgroundsubtracted, 1.0*IntegratedSpotSignal-(area*ReferenceIntensity))
+		CalcAttr(IntegratedSpotSignal_Backgroundsubtracted, iif(IntegratedSpotSignal_Backgroundsubtracted>0.0000001,IntegratedSpotSignal_BackgroundSubtracted,0.0))	
+		//Replace spots with objects for output
+		set(Spots = objects)
 }
