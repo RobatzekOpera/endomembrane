@@ -137,7 +137,7 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	set(LeafCells=Wholecells)
 
 	// STOMATA AND GAPS CLASSIFICATION
-	objectfilter(area>300 and ((DarkToRegion4<0.32 and Border_intensity>Line_mean) or (DarkToRegion4<0.24 and Border_intensity>0.8*Line_mean)), objects=objectstype2)
+	objectfilter(area>300, objects=objectstype2)
 	set(Stomata=objects)
 	CalcStat("max",Stencil=body,image=Stomata.body.image,objects=objectstype2)
 	objectfilter(max==0)
