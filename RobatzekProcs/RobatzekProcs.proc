@@ -36,7 +36,7 @@ proc Spot_Detection_MPIZ(
 	double IntegratedSpotSignalPerArea out "Integrated spot signal per SearchRegion area (per visible ~cell area).",
 	double IntegratedSpotSignalPerArea_BackgroundSubtracted out "Integrated spot signal BackgroundSubtracted per SearchRegion area (per visible ~cell area)."
 
-) spot detection, object recognition, Robatzek Packages "Spot detection procedure. Finds spots on SpotImage. Spot candidates are detected as local intensity maximums. Thereupon the spots are selected by contrast and intensity parameters. Proper spot detection input parameters can be found with the template script spot_detection_parameter_scanner.script (spot_detection_parameter_scanner_Acapella10.script for Acaplella 1.0). Opera multiple field spot images can be evaluated based on the template script Opera_multifields_spots.script. See more in Opera spot detection manual."
+) spot detection, object recognition, Robatzek Procedures "Spot detection procedure. Finds spots on SpotImage. Spot candidates are detected as local intensity maximums. Thereupon the spots are selected by contrast and intensity parameters. Proper spot detection input parameters can be found with the template script spot_detection_parameter_scanner.script (spot_detection_parameter_scanner_Acapella10.script for Acaplella 1.0). Opera multiple field spot images can be evaluated based on the template script Opera_multifields_spots.script. See more in Opera spot detection manual."
 {
 
 	
@@ -77,7 +77,7 @@ proc Spot_Detection_MPIZ(
 proc CalcNodesLarge( 
 string SkeletonName="skeleton" in "Stencil in input list,  Nodes are found for this stencil", 
 objectlist objects inout "Input-output object list"
-)Robatzek Packages "Adds to object list a stencil-type attribute LargeNodes"
+)Robatzek Procedures "Adds to object list a stencil-type attribute LargeNodes"
 {
 	if(!defined("objects." & SkeletonName))
 		error("Error. Input stencil " & SkeletonName & " is not defined. Input SkeletonName should correspond to the existing stencil-type attribute in the input object list.")
@@ -143,7 +143,7 @@ string SkeletonName="skeleton" in "Stencil-type attribute on which the  skeleton
 string DeadEndStencil="deadend" in "Stencil-type attribute, which corresponds to DeadEnd tips",
 objectlist objects inout "Input-output object list with the stencil-type attribute on which the branches are found. Input list must include also a stencil, which coresponds to dead end tips.",
 objectlist Branches out "Output object list of Branch lines on the skeleton between nodes.  " 
-) Robatzek Packages "Finds skeleton branches between nodes. Outputs object list of skeleton branches"
+) Robatzek Procedures "Finds skeleton branches between nodes. Outputs object list of skeleton branches"
 {
 	set(ob_in=objects)
 	if(!defined("objects." & SkeletonName))
@@ -203,7 +203,7 @@ objectlist Branches out "Output object list of Branch lines on the skeleton betw
 proc CalcDeadEndTypes(
 string SkeletonName="skeleton" in "Stencil-type attribute, which corresponds to skeleton",
 objectlist objects inout "Input-output object list"
-) Robatzek Packages "Finds the deadend tips in the skeleton"
+) Robatzek Procedures "Finds the deadend tips in the skeleton"
 {
 	set(ob_in=objects)
 	if(!defined("objects." & SkeletonName))
@@ -321,7 +321,7 @@ proc RemoveSkeletonLayer(
 string SkeletonName="skeleton" in "Stencil-type attribute, which corresponds to skeleton",
 int MinimumArea=10 in "DeadEnd skeleton branches with area less than the limit are discarded",
 objectlist objects inout "Input-output object list"
-) Robatzek Packages "Discards from skeleton the DeadEnd branches with area less than the limit MinimumArea"
+) Robatzek Procedures "Discards from skeleton the DeadEnd branches with area less than the limit MinimumArea"
 {
 	set(ob_in=objects)
 	if(!defined("objects." & SkeletonName))
@@ -364,7 +364,7 @@ objectlist objects inout "Input-output object list",
 objectlist Branches out "Output object list of skeleton branches",
 objectlist Nodes out "Output object list of nodes"
 //int MinimumArea=20 in "DeadEnd skeleton branches with area less than the limit are discarded"
-) Robatzek Packages "Finds Brances and Nodes of skeleton. Outputs object lists of the found Branches and Nodes. In addition adds to the input list attributes branches and nodes."
+) Robatzek Procedures "Finds Brances and Nodes of skeleton. Outputs object lists of the found Branches and Nodes. In addition adds to the input list attributes branches and nodes."
 {
 	set(ob_in=objects)
 	if(!defined("objects." & SkeletonName))
@@ -398,7 +398,7 @@ objectlist Nodes out "Output object list of nodes"
 proc FillSmallHoles(
 int minimumholearea=20 in "Minimum area for holes. Holes with area less than the limit are filled",
 objectlist objects inout "Input-output object list. Attributes in the input list are lost."
-) Robatzek Packages "Fills small holes in objects. Holes with area less than the limit MinimumHoleArea are filled."
+) Robatzek Procedures "Fills small holes in objects. Holes with area less than the limit MinimumHoleArea are filled."
 {
 	set(ob_in=objects)
 	fillobjects()
@@ -422,7 +422,7 @@ int ImageWidth in,
 int ImageHeight in,
 int NumberOfLinearDivision in,
 objectList objects out
-) Robatzek Packages
+) Robatzek Procedures
 {
 	set(w0=int((1.0*ImageWidth)/(2.0*NumberOfLinearDivision)))
 	set(h0=int((1.0*ImageHeight)/(2.0*NumberOfLinearDivision)))
@@ -447,7 +447,7 @@ int LastZPlane in,
 datacube datacube inout,
 image IM_planeNumber out,
 image PlaneNumberImage out
-) Robatzek Packages, [hidden]
+) Robatzek Procedures, [hidden]
 {
 	////// Projects maximum intensity for each x-y position from datacube to image
 	Maximums3D(0,image=datacube)
@@ -573,7 +573,7 @@ image PlaneNumberImage out
 
 proc ReduceStencilObjectsByAreaTo31999_MPIZ(
 stencil stencil inout "Input-output stencil, which object number will be reduced to fit the limit 31999. Only the first 31999 objects are taken into account and the others are discarded."
-) Robatzek Packages, [hidden]
+) Robatzek Procedures, [hidden]
 {
 	set(alimit=32000)
 	set(alimit2=alimit-1)
@@ -638,7 +638,7 @@ int MinStdDev in,
 DataCube DataCube out,
 int newFirstZplane out,
 int newLastZplane out
-) Robatzek Packages
+) Robatzek Procedures
 {
 	set( Zplane = FirstZplane )	
 
@@ -695,7 +695,7 @@ bool debugImages =NO in "YES- processed images are depicted. No- processed image
 ObjectList LeafCells out "output list of leaf cells",
 ObjectList BigLeafCells out "output list of big leaf cells",
 objectlist Lines out "List of line structure",
-) Robatzek Packages, Object Recognition "Detects Leaf Cels in an image using a line walking algorithm (N.B. The word 'cels' is deliberately spelled incorrectly because the software appears to have a problem with the correct spelling)"
+) Robatzek Procedures, Object Recognition "Detects Leaf Cels in an image using a line walking algorithm (N.B. The word 'cels' is deliberately spelled incorrectly because the software appears to have a problem with the correct spelling)"
 {
 thresholdxx(4, Image=Image1)
 	mean(image=image1) //image smoothing - removes noise
@@ -723,7 +723,6 @@ thresholdxx(4, Image=Image1)
 	set(image[1,1]=1, image[image1.width-2,1]=1, image[image1.width-2,image1.height-2]=1, image[1,image1.height-2]=1)
 	
 	mask2stencil(image)
-
 	stencil2objects()
 	calczone(50)
 	zonemask(-50,oo)
@@ -920,7 +919,7 @@ proc DetectType2Objects(
 	objectlist Lines in "Input list of line structure",
 	objectlist LeafCells inout "Input-output list of cells. In output list regions, which belong to type2 objects are erased.",
 	objectlist ObjectsType2 out "List of detected type objects"
-) Robatzek Packages
+) Robatzek Procedures
 {
 	//////////////////////////////////////////////////// Finds Type2 objects
 	
@@ -993,7 +992,7 @@ proc DetectType2Objects(
 proc CalcFillStencil_MPIZ(
 	string StencilName="body" noquote in "Name of the stencil type attribute in the input object list, which will be filled. Only short attribute names are supported: StencilName=body is correct whereas centers=Objects.Body is erroneous. The attribute name can be given with and without the quotation marks, i.e. both are correct: StencilName=body and StencilName=\"body\".",
 	objectlist objects inout "Input-output object list. The output list includes a new stencil type attribute, which corresponds to the created objects. A number of objects is equal to a number of the initial centers. In case of body stencil (StencilName=\"body\") the added attribute has the name \"Filled\" otherwise \"StencilName_Filled\". For example, if StencilName=\"BrightMask\" the attribute name is \"BrightMask_Filled.\"." 
-) Robatzek Packages, object list attribute creation "Fills the gaps (holes) in the geometrical regions given by a stencil type attribute. The output object list includes a new stencil, which corresponds to the \"filled regions\". See also the module FillObjects(), which performs exactly the same operation. The difference is that CalcFillStencil_MPIZ() can be applied to all stencil type attributes while FillObjects() only to the body one."
+) Robatzek Procedures, object list attribute creation "Fills the gaps (holes) in the geometrical regions given by a stencil type attribute. The output object list includes a new stencil, which corresponds to the \"filled regions\". See also the module FillObjects(), which performs exactly the same operation. The difference is that CalcFillStencil_MPIZ() can be applied to all stencil type attributes while FillObjects() only to the body one."
 {
 	set(objects_in=objects)
 	eval("set(Stencil=objects." & StencilName & ")")
@@ -1041,7 +1040,7 @@ bool debugImages =NO in "YES- processed images are depicted. No- processed image
 objectlist Haustoria out "Output object list with initial objects. Object filter must be applied in the next steps for Haustoria classification.",
 double line_mean out "Mean intensity of the line structure",
 double nuclei_quantile7 out "Quantile 0.7 for intensity of nuclei" 
-) Robatzek Packages, object recognition "Detects initial objects for haustoria detection. Object filter must be applied in the next steps for Haustoria classification. The procedure corresponds to nuclei_detection_A() routine."
+) Robatzek Procedures, object recognition "Detects initial objects for haustoria detection. Object filter must be applied in the next steps for Haustoria classification. The procedure corresponds to nuclei_detection_A() routine."
 {
 	Input(MinimumHaustoriaArea, 120, "Minimum Haustorium Area","i", "Minimum allowed area for haustorium, objects with area less than the limit are removed.") 
 	
@@ -1112,7 +1111,7 @@ image IM_projected1 in "Input image with intensity information. Spots are detect
 objectlist spots in "Input list of the initial spots",
 bool debugImages =NO in "YES- processed images are depicted. No- processed images are not shown.",
 objectlist SpotsFiltered out "List of the classified spots with the calculated attributes"
-) Robatzek Packages "Detects the actual spot locations by the initial list. Creates a new list and calculates attributes like area, contrast, width, length etc and thereupon classifies/filters the spots."
+) Robatzek Procedures "Detects the actual spot locations by the initial list. Creates a new list and calculates attributes like area, contrast, width, length etc and thereupon classifies/filters the spots."
 {
 input(SpotMinimumArea, 1, "SpotMinimumArea", "i", "Minimum allowed area for spots. Objects with area less than the limit are discarded.")
 		input(SpotMinimumContrast, 0.18, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
@@ -1273,7 +1272,7 @@ proc Spot_detection_outputs_modified(objectlist objects in  "Input object list o
 	double IntegratedSpotSignalPerArea out "Integrated spot signal per SearchRegion area (per visible ~cell area).",
 	double IntegratedSpotSignalPerArea_BackgroundSubtracted out "Integrated spot signal BackgroundSubtracted per SearchRegion area (per visible ~cell area)."
 
-	) Robatzek Packages, spot detection "Supporting procedure for spot detection library. Reports spot detection outputs. Please note that output parameters can be reported by list of SearchObjects (e.g. list of ~cells), which contains spot data. List of spots does not contain information about number of ~cells, ~cell area etc and therefore all spot outputs can not be reported by this list. Input list Objects must contain same attributes (spot data) as spot detection output list WholeCells. Could be used in multiple-field scripts or after spot or ~cell classification etc. See more in Opera spot detection manual."
+	) Robatzek Procedures, spot detection "Supporting procedure for spot detection library. Reports spot detection outputs. Please note that output parameters can be reported by list of SearchObjects (e.g. list of ~cells), which contains spot data. List of spots does not contain information about number of ~cells, ~cell area etc and therefore all spot outputs can not be reported by this list. Input list Objects must contain same attributes (spot data) as spot detection output list WholeCells. Could be used in multiple-field scripts or after spot or ~cell classification etc. See more in Opera spot detection manual."
 {
 
 	if(objects.count>0)
@@ -1319,7 +1318,7 @@ proc Spot_detection_outputs_modified(objectlist objects in  "Input object list o
 proc CalcRoundnessCorrected(
 	String StencilName="body" noquote in "Name of a stencil stencil type attribute in the input list. The input must correspond to the stencil type attribute in the input list. Only short syntax of attribute names is supported: StencilName=body is correct and  StencilName=Objects.Body is erroneous. The input can be given with and without the quatation marks, both are correct: StencilName=body and StencilName=\"body\".", 
 	objectlist objects inout "Input-output object list. The output list contains the calculated corrected roundness attribute RoundnessCorrected. In case of body stencil (StencilName=\"body\") the attribute name is \"RoundnessCorrected\" otherwise \"StencilName_RoundnessCorrected\". For example, if StencilName=\"MembraneRegion\" the attribute name is \"MembraneRegion_RoundnessCorrected\"."
-) Robatzek Packages, object list attribute creation "Finds the corrected roundness parameter for a stencil type attribute. The output list contains the found attribute RoundnessCorrected."
+) Robatzek Procedures, object list attribute creation "Finds the corrected roundness parameter for a stencil type attribute. The output list contains the found attribute RoundnessCorrected."
 {
 	set(objects_in=objects)
 	if(!defined("objects." & StencilName))
@@ -1402,7 +1401,7 @@ int ImagesINOneStack in,
 int NumberOfChannels in, 
 int FirstZplane out , 
 int LastZplane out
-) Robatzek Packages, "Assigns image names for the current field"
+) Robatzek Procedures, "Assigns image names for the current field"
 {
 	set(FirstZplane=(_StackCounter-1)*ImagesINOneStack+1)
 	set(LastZplane=(_StackCounter)*ImagesINOneStack-NumberOfChannels+1)
@@ -1413,18 +1412,15 @@ image IM_projected1 in "Input image with intensity information. Spots are detect
 objectlist Spots in "Input list of the initial spots",
 bool debugImages =NO in "YES- processed images are depicted. No- processed images are not shown.",
 objectlist Spots out "List of the classified spots with the calculated attributes"
-) Robatzek Packages " calculates attributes like area, contrast, width, length etc "
+) Robatzek Procedures " calculates attributes like area, contrast, width, length etc "
 {
-//input(SpotMinimumArea, 1, "SpotMinimumArea", "i", "Minimum allowed area for spots. Objects with area less than the limit are discarded.")
-	//	input(SpotMinimumContrast, 0.18, "SpotMinimumContrast", "d", "Minimum allowed contrast for spots. Objects with the parameter value less than the limit are discarded.")
-	//	input(SpotMinimumRoundness, 0.1, "SpotMinimumRoundness", "d", "Minimum allowed roundness parameter for spots. Objects with the parameter value less than the limit are discarded.")
-	//	input(MinimumWidth2LengthRatio, 0.5, "SpotMinimumWidth2LengthRatio","d", "Minimum allowed width to length ratio for spots. Objects with the ratio below the limit are discarded.")
-
 	    //**Attribute calculations on the resulting bodies**//
 		calcborder(body, objects = spots)
 		CalcArea(body)
 		//stencil2objects(objects.body)
-		CalcWidthLength(objects)
+
+		//Calculation capped at 100 here to optimize speed
+		CalcWidthLength(objects, upto100 = YES)
 		CalcAttr(Width2LengthRatio, iif(Full_Length>0,(2.0*Half_Width/Full_Length),0.0))
 		CalcRoundnessCorrected(Body, objects = objects)
 

@@ -59,7 +59,7 @@
 input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
 input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
 input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
-input(ShowIllustrations, YES, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
+input(ShowIllustrations, NO, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
 input(WriteImages, YES, "Write Images", "y", "Write Images of the projected image and the detected spots to file")
 input(debugImages,NO, "Debug Using Images", "y", "YES- all intermediary images are shown.")
 input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
@@ -111,7 +111,7 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	Set(BigLeafCells=objects)
 		
 	//Outer-cell spot detection Updated 07/07/10 with tweaked spot detection
-	RobatzekProcs::Spot_Detection_MPIZ(IM_projected2, "SearchRegion", debugImages, wholecells = BigLeafCells, spotMinimumDistance = 2, SpotPeakRadius = 0, SpotReferenceRadius = 6, SpotMinimumContrast = 0.4)
+	Spot_Detection_C(IM_projected2, "SearchRegion", debugImages, wholecells = BigLeafCells)
 	
 	delete(spotcandidates,wholecells)
 	
@@ -131,7 +131,7 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	Set(LeafCells=objects)
 		
 	// Detects the initial set of spots. Updated 07/07/10 with tweaked spot detection
-	RobatzekProcs::Spot_Detection_MPIZ(IM_projected2, "SearchRegion", debugImages, wholecells = LeafCells, spotMinimumDistance = 2, SpotPeakRadius = 0, SpotReferenceRadius = 6, SpotMinimumContrast = 0.4)
+	Spot_Detection_C(IM_projected2, "SearchRegion", debugImages, wholecells = LeafCells)
 	
 	delete(spotcandidates,wholecells)
 		
