@@ -107,7 +107,7 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	Set(BigLeafCells=objects)
 		
 	//Outer-cell spot detection Updated 07/07/10 with tweaked spot detection
-	RobatzekProcs::Spot_Detection_MPIZ(IM_projected2, "SearchRegion", debugImages, wholecells = BigLeafCells, spotMinimumDistance = 2, SpotPeakRadius = 0, SpotReferenceRadius = 6, SpotMinimumContrast = 0.4)
+	RobatzekProcs::Spot_Detection_MPIZ(IM_projected2, "SearchRegion", debugImages, wholecells = BigLeafCells, spotMinimumDistance = 2, SpotPeakRadius = 1, SpotReferenceRadius = 10, SpotMinimumContrast = 0.1, SpotMinimumContrast = 0.8)
 	
 	delete(spotcandidates,wholecells)
 	

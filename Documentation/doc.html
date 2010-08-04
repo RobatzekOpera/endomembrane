@@ -9,6 +9,7 @@
         h1{text-align:center; text-decoration:underline}
         h3{text-indent: 2em}
         h4{text-indent: 4em}
+        .star{font-size: small}
         .link{padding-top: 1em; padding-bottom: 1em; text-align: center}
         .footnote{font-size:small; padding-top:1em; border-top:groove}
     </style>
@@ -32,7 +33,7 @@
     </div>
         
     <h2><a name=1>1. </a> Summary</h2>
-    <p>The Endomembrane script may be run on images of wells produced by the Opera Confocal microscope. It aims to detect, as best as possible, regions in the image that indicate cell bodies and endomembrane structures, indicated by localised areas of high intensity (usually small, white spots). The script outputs a list of attributes that includes the number of detected cells and spots but this extends to the physical attributes of cells and spots as well as some simple measurements on the quality of each field* relating to the information gained from it.</p>
+    <p>The Endomembrane script may be run on images of wells produced by the Opera Confocal microscope. It aims to detect, as best as possible, regions in the image that indicate cell bodies and endomembrane structures, indicated by localised areas of high intensity (usually small, white spots). The script outputs a list of attributes that includes the number of detected cells and spots but this extends to the physical attributes of cells and spots as well as some simple measurements on the quality of each field<span class="star">*</span> relating to the information gained from it.</p>
     <p>The information here will describe the inputs and outputs of the script, how the script works, the custom procedures used within the script, the differences between this version of the script and the previous version, and information on downloading and installing the material from the online repository.</p>
     <h2><a name=2>2. </a>Inputs</h2>
     <div class="image">
@@ -110,7 +111,7 @@
     <h3>Well Sorting and Projections</h3>
     <p>The procedures <em>ControlImageFieldsStackAC2</em>, <em>CreateDataCubeWithControl</em>, <em>DataCubeProjectionCorrection</em> from RobatzekProcs have been removed and replaced with procedures from the Opera Templates library for sorting images from wells and creating a Maximum Projection. This has changed the resulting maximum projection, and more blank areas are now filled with information.</p>
     <h3>Cell Detection</h3>
-    Cells in the image were detected using the procedure LeafCellsDetection. The procedure was inaccurate when analysing local images and it had a tendancy to exclude large cells, mistaking them for areas with no detectable cells. In an attempt to improve the accuracy, this was replaced with the procedure planeSum_celDetection. This procedure aims to find as many detectable cells as possible whilst identifying areas where no cells can be detected.
+    <p>Cells in the image were detected using the procedure LeafCellsDetection. The procedure was inaccurate when analysing local images and it had a tendancy to exclude large cells, mistaking them for areas with no detectable cells. In an attempt to improve the accuracy, this was replaced with the procedure planeSum_celDetection. This procedure aims to find as many detectable cells as possible whilst correctly identifying areas where no cells can be detected. Correct detection of cells is important for both accurately detecting spots and identifying stacks that provide enough information to be correctly analysed.
     <h3>Spot Detection</h3>
     <p>Essentially the same procedure for spot detection is used, but the parameters have changed (table 1). Spots were then filtered by the procedure SpotClassificationLeafCells. This was found to remove too many actual spots and has been replaced by SpotAttributeCalculation, which simply calculates spot attributes.</p>
     <table border=1>
@@ -144,7 +145,7 @@
     <p>Before, the endomembrane script would go on to search for &#8220;type 2&#8221 objects such as haustoria, gaps and stomata. Since these were both rarely found and innacurate, these procedures were removed from the script. The endomembrane script will now only attempt to detect cells (using PlaneSum_CelDetection) and spots (using spotDetection_MPIZ).</p>
     
     <h2><a name=6>6. </a> Supporting Procedures</h2>
-    <h3>planeSum_celDetection** (from robatzekprocs.proc)</h3>
+    <h3>planeSum_celDetection<span class="star">**</span> (from robatzekprocs.proc)</h3>
     <p>Detects the positions of leaf cells within a field of planes. High intensities from each mask are kept and added together to create an image projection, where the intensity of each pixel equals the number of planes the pixel is present in. From this, a mask of locally high intensities is produced using Bright_Mask, which allows the bright intensity of the cell wall to be mostly seperated from the noise of bright objects within the cell.</p>
     
     <table>
@@ -172,22 +173,24 @@
         </tr>
     </table>
     
-    <p>A large problem with this method is that the cell wall can become seperated in the places where it is not at its brightest. This causes unfinished ends to the cell wall which are eventually removed, causing the cells to merge together. This has been partially solved by slightly dilated the cell wall so that the cell wall can join back together over small gaps before eroding it again. However this causes other problems, such as unwanted inner cell noise conencting the the cell wall mask and creating fake cell walls that split cells up places where they become thin.</p>
-    <p>A simple method is used to detect areas of the image where cells are not in focus. This involves taking a Bright_Mask and a Dark_Mask to find all variations in the image. Areas left over are classified as outside the cell and outputed in a seperate objectlist.</p>
+    <p>A large problem with this method is that the cell wall can become seperated in the places where it is not at its brightest intensity. This causes unfinished ends to the cell wall which are eventually removed, causing the cells to merge together. This has been partially solved by slightly dilated the cells so that the cell wall can join back together over small gaps. The cell walls are then eroded back to their original thickness. However, the dilation of objects causes other problems, such as unwanted inner cell noise connecting merging into the cell wall object. The result is cell that is split up in places where the cell bodies are thin.</p>
+    <p>A simple method is used to detect areas of the image where cells are not in focus. This involves taking a bright mask and a dark mask to find all variations in intensity of the sum projection. Areas left over are classified as outside the cell and placed in a seperate objectlist.</p>
     <h3>SpotAttributeCalculation (from robatzekprocs.proc)</h3>
     Calculates extra attributes from an input list of objects (spots) and adds them to the objectlist.
     <h3>spotDetection_MPIZ.proc (from robatzekprocs.proc)</h3>
     Essentially a wrapper for the spot detection procedure Spot_Detection_C_Inner.
     
     <h2><a name=7>7. </a> Further Scripts and Procedures</h2>
-    <h3>spotAnalysis.script</h3>
-    Produces the neccessary samples from an image to carry out a sensitivity and specificity analysis between procedures. Currently, the script will compare three different spot detection procedures, but this may be edited so that any number and type of procedures may be compared.
+    <h3>original_endomembrane.script</h3>
+    <p>The original version of endomembrane.script. Left completely untouched.</p>
     <h3>leafless_endomembrane_detection.script</h3>   
     <p>Detects spots within a well without detecting leaf cells.</p>
     <h3>Endomembrane_projection.script</h3>
     <p>A modified version of original_endomembrane.script that works on TIFF files containing the maximum projections of each field. This will work with confocal microscopes that produce single images per field. It is impossible to modify endomembrane.script to work in this way due to the method of leaf cell detection, which requires seperate planes from each field.</p>
+    <h3>spotAnalysis.script</h3>
+    <p>Produces the neccessary samples from an image to carry out a sensitivity and specificity analysis between procedures. Currently, the script will compare three different spot detection procedures, but this may be edited so that any number and type of procedures may be compared.</p>
     <h3>multifields_template.script</h3>
-    <p>A template script that includes the code requied to read in images and produce a maximum projection for each stack using a for loop.</p>
+    <p>A template script that includes the code required to read in images and produce a maximum projection for each stack using a for loop.</p>
     <h3>ClusterDetection.proc (from robatzekprocs.proc)</h3>
     <p>A small, simple procedure that attempts to find abnormal clustering of spots. Currently not very useful.</p>
     
@@ -196,7 +199,7 @@
     <div class="link">http://github.com/RobatzekOpera/endomembrane</div>
     <p>To download a compressed file of all the material, click on the &#8220;Download Source&#8221; button near the top right of the page. Once downloaded, extract the contents and move the RobatzekProcs folder to the following directory on the local hard drive:
     <div class="link">C:\PerkinElmerCTG\IMacro\StdLib</div>
-    <p>This should make all supporting procedures available to the Acapella library and any scripts that are run using the Acapella player. If this is not the case, select &#8220;help&#8221; from the Acapella menu, click on &#8220;Regenerate Online Help&#8221; and select &#8220;OK&#8221; in the message windows that opens.</p>
+    <p>This should make all supporting procedures available to the Acapella library and any scripts that are run using the Acapella player. If this is not the case, select &#8220;help&#8221; from the Acapella menu, click on &#8220;Regenerate Online Help&#8221; and select &#8220;OK&#8221; in the message windows that pops up.</p>
     <div class="footnote"><p>* The use of the words "stack" and "field" have been used interchangably when describing Acapella scripting. In this documentation, I have tried to stick to the idea that the "stack" is a collection of planes that represent the "field", which is the subject area being imaged.</p>
     <p>** Procedures that are named using the combination of letters, &#8220;cell&#8221;, are automatically deprecated and hidden within any procedure library list. This may be related to an attempt to change the semantics of the Acappella language from a cell-oriented language to a more general object-oriented language. For this purpose it does not make sense to use the word &#8220;object&#8221; instead of &#8220;cell&#8221;, so instead I have opted for a shorthand (and incorrect) spelling.</p></div>
 </body>
