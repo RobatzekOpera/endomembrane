@@ -55,24 +55,24 @@ proc planeSum_CelDetection(
 		Push(planemasks, Mask)
 	end()
 
-	//Take a mask of the projection and find all the objects
-	ThresholdXX(1, image = IM_Max)
-	Mask(threshold, image = IM_Max|projectionMask = Mask)
-	Mask2Stencil(projectionMask|projectionStencil = Stencil)
-	Stencil2Objects(projectionStencil|projectionObjects = Objects)
-
 //***SUM OF PLANES***//
 	//start with a blank canvas
 	Blank(IM_width, IM_height | sum = image)
 
 	//loop over planes
-	foreach(planemasks, thismask)
+	foreach(Planes, plane)
+		//Take a mask with calculated threshold
+		ThresholdXX(1, image = plane)
+		Mask(threshold, image = plane)
+		
+		//Keep a vector of all plane masks found
+		Push(planemasks, Mask)
+		
 		//Removal of small objects that might create noise over time
-		mask2stencil(thismask)
+		mask2stencil(Mask)
 	    Stencil2Objects(Stencil)
 		CalcArea(objects = objects)
 		ObjectFilter(area >100, objects = objects)
-		//RobatzekProcs::CalcRoundnessCorrected("body", objects = objects)
 		
 		set(mask = objects.body.mask.image)
 		

@@ -4,12 +4,37 @@
 <html lang="en">
 <head>
     <title>The Endomembrane Script and Related Procedures</title>
+    <style type="text/css">
+        .caption{font-size: small}
+        h1{text-align:center; text-decoration:underline}
+        h3{text-indent: 2em}
+        h4{text-indent: 4em}
+        .NB{font-size: small}
+        .link{padding-top: 1em; padding-bottom: 1em; text-align: center}
+    </style>
+
 </head>
-<body>
+<body>   
     <h1>The Endomembrane Script and Related Procedures</h1>
-    <h2>Summary</h2>
-    <p>The Endomembrane script may be run on images of wells produced by the Opera Confocal microscope. It aims to detect, as best as possible, regions in the image that indicate cell bodies and end omembrane structures, indicated by localised areas of high intensity (usually small, white spots). The script outputs a list of attributes that includes the number of detected cells and spots but extends to the physical attributes of cells and spots as well as some simple measurements on teh quality of each field relating to the information gained from it. The information here will describe the inputs and outputs of the script, how the script works, the custom procedures used within the script and the differences between this version of the script and the previous version.</p>
-    <h2>Inputs</h2>
+    
+    <div class="contents">
+        <h3>Contents</h3>
+        <ol>
+            <li><a href="#1">Summary</a></li>
+            <li><a href="#2">Inputs</a></li>
+            <li><a href="#3">Outputs</a></li>
+            <li><a href="#4">Analysis</a></li>
+            <li><a href="#5">Major Changes</a></li>
+            <li><a href="#6">Supporting Procedures</a></li>
+            <li><a href="#7">Further Scripts and Procedures</a></li>
+            <li><a href="#8">Repository Information and Installation</a></li>
+        </ol>
+    </div>
+        
+    <h2><a name=1>1. </a> Summary</h2>
+    <p>The Endomembrane script may be run on images of wells produced by the Opera Confocal microscope. It aims to detect, as best as possible, regions in the image that indicate cell bodies and endomembrane structures, indicated by localised areas of high intensity (usually small, white spots). The script outputs a list of attributes that includes the number of detected cells and spots but this extends to the physical attributes of cells and spots as well as some simple measurements on the quality of each field relating to the information gained from it.</p>
+    <p>The information here will describe the inputs and outputs of the script, how the script works, the custom procedures used within the script, the differences between this version of the script and the previous version, and information on downloading and installing the material from the online repository.</p>
+    <h2><a name=2>2. </a>Inputs</h2>
     <div class="image">
         <IMG src="inputs.JPG" alt="Screenshot of the input parameters and their defaults in the Acapella player" />
         <div class="caption">
@@ -24,7 +49,7 @@
     <p><em>Debug Using Images -</em> Images showing the result of each process in the script will be outputed. Useful for debugging only.</p>
     <p><em>Rejected Stack Threshold -</em> The highest percentage of spots outside cells before the image is rejected from the analysis.</p>
     
-    <h2>Outputs</h2>
+    <h2><a name=2>3. </a> Outputs</h2>
     <h3>Well Outputs</h3>
     <ul>
         <li>Number of spot Candidates</li>
@@ -73,7 +98,7 @@
         <li>Average number of spots per recognised area in stack</li>
     </ul>
     
-    <h2>Analysis</h2>
+    <h2><a name=4>4. </a> Analysis</h2>
     <p>Objects within each image stack are detected by first finding a projection resulting from the combination of planes in one stack. Two types of projections are used within the script. The most common is maximum projections and is taken using supporting procedures from the Opera Templates library, specifically MaxProjections.</p>
     <p>The first analysis is the detection of leaf cells in each stack. This is done using the procedure <em>planeSum_celDetection</em>. The result is a list of objects indicating the placement of leaf cells and a second list of objects that indicate areas where no cells could be detected.</p>
     <p>Spot detection is carried out using the procedure <em>spot_detection_MPIZ</em> from the RobatzekProcs library. The procedure is used to search for spots within cells and spots in regions where no cells were detected.</p>
@@ -81,7 +106,7 @@
     <p>The size of the area containing no detected cells can affect the analysis of a field. If a proportion of the spots above the stack rejection threshold reside outside cells, the field is withdrawn from the analysis. The stack rejection threshold can be set from the Acapella player and the default level is 25%.</p>
     <P>A stack will be labelled as invalid if there are no detected spots within leaf cells.</p>
     
-    <h2>Major Changes</h2>
+    <h2><a name=5>5. </a> Major Changes</h2>
     <h3>Well Sorting and Projections</h3>
     <p>The procedures <em>ControlImageFieldsStackAC2</em>, <em>CreateDataCubeWithControl</em>, <em>DataCubeProjectionCorrection</em> from RobatzekProcs have been removed and replaced with procedures from the Opera Templates library for sorting images from wells and creating a Maximum Projection. This has changed the resulting maximum projection, and more blank areas are now filled with information</p>
     <h3>Cell Detection</h3>
@@ -118,7 +143,7 @@
     <h3>Secondary Object Detection</h3>
     <p>Before, the endomembrane script would go on to search for &#8220;type 2&#8221 objects such as haustoria, gaps and stomata. Since these were both rarely found and innacurate, these procedures were removed from the script. The endomembrane script will now only attempt to detect cells (using PlaneSum_CelDetection) and spots (using spotDetection_MPIZ).</p>
     
-    <h2>Supporting Procedures</h2>
+    <h2><a name=6>6. </a> Supporting Procedures</h2>
     <div class=NB>NB: Procedures that are named using the combination of letters, &#8220;cell&#8221;, are automatically deprecated and hidden within any procedure library list. This may be related to an attempt to change the semantics of the Acappella language from a cell-oriented language to a more general object-oriented language. For this purpose it does not make sense to use the word &#8220;object&#8221; instead of &#8220;cell&#8221;, so instead I have opted for a shorthand (and incorrect) spelling.</div>
     <h3>planeSum_celDetection (from robatzekprocs.proc)</h3>
     <p>Detects the positions of leaf cells within a field of planes. High intensities from each mask are kept and added together to create an image projection, where the intensity of each pixel equals the number of planes the pixel is present in. From this, a mask of locally high intensities is produced using Bright_Mask, which allows the bright intensity of the cell wall to be mostly seperated from the noise of bright objects within the cell.</p>
@@ -155,14 +180,24 @@
     <h3>spotDetection_MPIZ.proc (from robatzekprocs.proc)</h3>
     Essentially a wrapper for the spot detection procedure Spot_Detection_C_Inner.
     
-    <h2>Further Scripts and Procedures</h2>
+    <h2><a name=7>7. </a> Further Scripts and Procedures</h2>
     <h3>spotAnalysis.script</h3>
     Produces the neccessary samples from an image to carry out a sensitivity and specificity analysis between procedures. Currently, the script will compare three different spot detection procedures, but this may be edited so that any number and type of procedures may be compared.
     <h3>leafless_endomembrane_detection.script</h3>
     Detects spots within a well without detecting leaf cells.
+    <h3>endomembrane_projection.script</h3>
     <h3>multifields_template.script</h3>
     <p>A template script that includes the code requied to read in images and produce a maximum projection for each stack using a for loop</p>
     <h3>ClusterDetection.proc (from robatzekprocs.proc)</h3>
     <p>A small, simple procedure that attempts to find abnormal clustering of spots. Currently not very useful.</p>
+    <h3>Endomembrane_projection.script</h3>
+    <p>A modified version of original_endomembrane.script that works on TIFF files containing the maximum projections of each field. This will work with confocal microscopes that produce single images per field. It is impossible to modify endomembrane.script to work in this way due to the method of leaf cell detection, which requires seperate planes from each field.</p>
+    
+    <h2><a name=8>8. </a> Repository Information And Installation</h2>
+    <p>All Acapella scripts and pocedures have been uploaded to an online repository located at</p>
+    <div class="link">http://github.com/RobatzekOpera/endomembrane</div>
+    <p>To download a compressed file of all the material, click on the &#8220;Download Source&#8221; button near the top right of the page. Once downloaded, extract the contents and move the RobatzekProcs folder to the following directory on the local hard drive:
+    <div class="link">C:\PerkinElmerCTG\IMacro\StdLib</div>
+    This should make all supporting procedures available to the Acapella library and any scripts that are run using the Acapella player. If this is not the case, select &#8220;help&#8221; from the Acapella menu, click on &#8220;Regenerate Online Help&#8221; and select &#8220;OK&#8221; in the message windows that opens.
 </body>
 </html>

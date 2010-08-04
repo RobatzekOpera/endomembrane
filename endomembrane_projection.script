@@ -1,6 +1,6 @@
 //*************************************************************************
-//  File Name:			MPI_leaves_h_seba.script
-//  Purpose: Detects spot-like features on leaf images, images from MPIZ-Ko"ln
+//  File Name:			endomembrane_projection.script
+//  Purpose: Detects spot-like features on leaf images from single-image maximum projections
 //
 // 							EVOTEC  TECHNOLOGIES 
 //  						Olavi Ollikainen
@@ -12,6 +12,12 @@
 //  With further modifications from Sebastian Schaaf MPIZ Ko"ln
 //  phone			+49 (0) 221 5062 323
 //	e-mail			schaaf@mpiz-koeln.mpg.de
+//
+// This version created by Matthew Beckers, The Sainsbury Laboratory 04/08/2010
+// 
+// DESCRIPTION
+// This script functions much like original_endomembrane.script, but has been modified to work on fields of single images, usually the maximum 
+// projection of its planes. i.e. this script assumes that the max projection has been worked out previously.
 //*************************************************************************
 //
 // 				Output parameters:
@@ -57,13 +63,11 @@
 
 // INPUT PARAMETERS
 input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
-input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
-input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
+input(BadStacksThreshold, 25, "Stack Rejection Threshold (%)", "i", "Percentage number of spots that must be within cells for Stack to be analysed")
 input(ShowIllustrations, YES, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
 input(WriteImages, YES, "Write Images", "y", "Write Images of the projected image and the detected spots to file")
 input(debugImages,NO, "Debug Using Images", "y", "YES- all intermediary images are shown.")
-input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
-input(BadStacksThreshold, 25, "Stack Rejection Threshold (%)", "i", "Percentage number of spots that must be within cells for Stack to be analysed")
+
 // READS IN IMAGES
 Singlewell(compact=no)
 
@@ -71,7 +75,7 @@ Singlewell(compact=no)
 //RobatzekProcs::ControlImageFieldsStackAC2(sourcedata, NumberOfChannels, ZplanesInStack, StackNo)
 set(startStack = 1)
 set(endStack = sourcedata.@rowcount)
-set(imageFields = sourcedata.sourceImage) //actualy image of each field
+set(imageFields = sourcedata.sourceImage) //actually image of each field
 
 set(InvalidStacks = 0)  //counts black/grey stacks without information
 set(BadStacks = 0)   //counts stacks with Signal but no recognized cells
