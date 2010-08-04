@@ -1,6 +1,12 @@
 //******************************************************************
 // File Name:   RobatzekProcs.proc
 // 
+//	The Sainsbury Laboratory
+//	Procedures exported by Matthew Beckers 04/08/2010
+//	
+//	This file is a list of Acapella supporting procedures. To allow use of these in Acapella scripts, please
+// make sure that this fle is placed within the standard library directory of the Opera Software. Commonly,
+// this is C:\PerkinElmerCTG\IMacro\StdLib\RobatzekProcs
 //
 
 Package(RobatzekProcs)
@@ -1460,4 +1466,47 @@ objectlist Spots out "List of the classified spots with the calculated attribute
 		CalcAttr(IntegratedSpotSignal_Backgroundsubtracted, iif(IntegratedSpotSignal_Backgroundsubtracted>0.0000001,IntegratedSpotSignal_BackgroundSubtracted,0.0))	
 		//Replace spots with objects for output
 		set(Spots = objects)
+}
+
+proc findPlateaus(
+	ObjectList spots in "The objectlist of spots that plateaus should be found within",
+	ObjectList plateaus out "The plateaus found in the input objectlist",
+	ObjectList filteredSpots out "The input objectlist with the plateaus excluded",
+)[hidden] Robatzek Procedures
+{
+		//Calculate the area of each object
+		CalcArea(objects=spots | spots = objects)
+	
+		//Find inter-quartile range
+		if(spots.count ==0)
+			set(spotsareaQ1 = 0)
+			set(spotsareaQ2 = 0)
+		else()
+			Quantile(spots.area, 0.25 |spotsareaQ1 = quantile)
+			Quantile(spots.area, 0.75 |spotsareaQ2 = quantile)
+		end()
+		set(interquartilerange = spotsareaQ2 - spotsareaQ1)
+	
+		//Filter any outlying areas
+		set(lowerlimit = spotsareaQ1 - 3*interquartilerange)
+		set(higherlimit = spotsareaQ2 + 3*interquartilerange)
+	
+		ObjectFilter(area < higherlimit, objects = spots | filteredSpots = objects) //spots without plateaus
+		ObjectFilter(area > higherlimit, objects = spots | plateaus = objects) //plateaus
+}
+
+proc TakeSamples(
+Image image in "The image to take samples of"
+int numSamples = 5 in "The number of samples to take from the image"
+int sampleSizeX = 100 in "The width of the sample"
+int sampleSizeY = 100 in "The height of the sample"
+Vector samples out "A vector containing the samples of the image"
+) Robatzek Procedures "Takes a number of samples from the image of a specified width and outputs them to a vector"
+{
+	foreach(1..numSamples)
+		set(rndCropX = rnd()*(IM_Max_CH1.width - sampleSizeX))
+		set(rndCropY = rnd()*(IM_Max_CH1.height - sampleSizeY))
+		Crop(rndCropX, rndCropY, rndCropX + sampleSizeY, rndCropY + sampleSizeX, image = IM_Max_CH1)
+		push(samples, image)
+	end()
 }

@@ -1,0 +1,84 @@
+//***************************************************
+// File: spotAnalysis.script
+//
+//	The Sainsbury Laboratory
+//	Matthew Beckers 04/08/2010
+//
+// DESCRIPTION
+// Takes random samples from a field projection and detects spots using three different spot detection procedures. The samples and results can be
+// used to carry out a sensitivy and specificity analysis. This script may be edited to include any number and any type of procedures for comparison 
+// and analysis.
+//***************************************************
+
+//Input and image projection copied from endomembrane.script. It could be instructive to use procedures from OperaTemplates instead.
+input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
+input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
+input(NumSamples, 2, "Number Of Samples", "i", "Number of samples to take from each image")
+input(X,100, "Length of Samples","i", "Length of each sample taken from images")
+input(Y,100,"Height of Samples","i","Height of each sample taken from images")
+input(Seed,1,"Random Seed", "i", "Random Number Generator Seed")
+
+//***initialise random number generator***//
+rndInitAny(Seed)
+
+// READS IN IMAGES
+Singlewell(compact=yes)
+
+OperaTemplates::ControlImages(StackNo, sourcedata)
+OperaTemplates::AssignPlane()
+
+// LOOP OVER IMAGE FIELDS
+
+if(StackNo > 0)
+	set(StartField = StackNo, EndField = StackNo)
+end()
+Foreach(StartField .. EndField, "_FieldCounter") 
+	OperaTemplates::AssignStacks()
+	OperaTemplates::MaxProjections()
+	set(IM_projected = IM_Max_CH1)
+	
+	if(X*NumSamples > IM_projected.length || Y*NumSamples > IM_projected.height)
+		Error("The number and length of samples could lead to a problem of finding enough independent samples from the image")
+	end()
+	
+	foreach(0..NumSamples, _sample)
+		if(_sample == 0)
+			set(rndCropX = rnd()*(IM_Max_CH1.width - X))
+			set(rndCropY = rnd()*(IM_Max_CH1.height - Y))
+		Else()
+			set(found = 0) //counting how many images that do not overlap with current sample.
+			while(found < Xvector.length) //if the number of samples that do not overlap is less than the samples there, one does overlap and we need to find another sample
+			set(found = 0) //reset, because we are checking a new sample
+				set(rndCropX = rnd()*(IM_Max_CH1.width - X))
+				set(rndCropY = rnd()*(IM_Max_CH1.height - Y))
+				foreach(0..Xvector.length - 1, _vec)
+					if(Eval(Eval(rndCropX < Xvector[_vec]) && Eval(rndCropX + X < Xvector[_vec])) || Eval(Eval(rndCropX > Xvector[_vec] + X) && Eval(rndCropX > Xvector[_vec] + X))) //if the X1 and X2 of sample is less than the X1 of sample or the X2 and X2 is greater than the X2 of sample it will not overlap
+						if(Eval(Eval(rndCropY < Yvector[_vec]) && Eval(rndCropY + Y < Yvector[_vec])) || Eval(Eval(rndCropY > Yvector[_vec] + Y) && Eval(rndCropY > Yvector[_vec] + Y)))
+							set(found = found + 1) //samples do not overlap in either dimension, so increment counter
+						end()
+					end()
+				end()
+			end()
+		end()
+		push(Xvector, rndCropX)
+		push(Yvector, rndCropY)
+		Crop(rndCropX, rndCropY, rndCropX + X, rndCropY + Y, image = IM_Max_CH1)
+
+	//******************************
+	// Actual Spot Analysese
+	//******************************
+		RobatzekProcs:OriginalSpotDetection(image)
+		push(Original, original_spots)
+		RobatzekProcs::Spot_Detection_MPIZ(image, "" | spots0 = spots)
+		push(MPIZ0, spots0)
+		RobatzekProcs::Spot_Detection_MPIZ(image, "", SpotMinimumDistance = 2, SpotPeakRadius = 0, SpotReferenceRadius = 6, SpotMinimumContrast = 0.4 | spots1 = spots)
+		push(MPIZ1, spots1)
+		push(samples, image)
+		imageView(image, "Field #" &_FieldCounter& " Sample #" &_sample, gamma = 1.5)
+		ImageView(original_spots.SpotCenters, "Field #" &_FieldCounter& " OriginalSpotDetection #" &_sample, image = image, gamma = 5)
+		ImageView(spots0.SpotCenters, "Field #" &_FieldCounter& " MPIZ0 #" &_sample, image = image, gamma = 5)
+		ImageView(spots1.SpotCenters, "Field #" &_FieldCounter& " MPIZ1 #" &_sample, image = image, gamma = 5)
+	end()
+	delete(Xvector, Yvector)
+end()
+//	delete(B_spots, foreach_index, image, Images_CH1, IM_CH1, IM_Max_CH1, IM_Plane_CH1, NumberOfChannels, NumberOfFields, NumberOfImages, NumberOfPlanes, NumberOfTimepoints, original_spots, rndCropX, rndCropY, SourceData, SourceDataProp, spots, StackNo, WellIndex)	

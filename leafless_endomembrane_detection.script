@@ -1,6 +1,6 @@
 //*************************************************************************
 //  File Name:			leafless_endomembrane_detection.script
-//  Purpose: Detects spot-like features on leaf images, images from MPIZ-Ko"ln
+//  Purpose: Detects spot-like features on leaf images
 //					
 // 							EVOTEC  TECHNOLOGIES 
 //  						Olavi Ollikainen
@@ -41,55 +41,50 @@
 
 // INPUT PARAMETERS
 input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
-input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
-input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
 input(ShowIllustrations, YES, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
 input(WriteImages, YES, "Write Images", "y", "Write Images of the projected image and the detected spots to file")
 input(debugImages,NO, "Debug Using Images", "y", "YES- all intermediary images are shown.")
-input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
 
 // READS IN IMAGES
 Singlewell(compact=yes)
 
-// COUNTS FIELDS AND CONTROLS IF ALL IMAGES ARE PRESENT
-RobatzekProcs::ControlImageFieldsStackAC2(sourcedata, NumberOfChannels, ZplanesInStack, StackNo)
+//Image projection created by the OperaTemplates procedures
+set(imagefilename1 = SourceData.sourcefilename[0])
+OperaTemplates::ControlImages(StackNo, sourcedata)
+OperaTemplates::AssignPlane()
+
 set(InvalidStacks = 0)  //counts black/grey stacks without information
 set(BadStacks = 0)   //counts stacks with Signal but no recognized cells
 set(all_VarsOK = 0)
 
 // LOOP OVER IMAGE FIELDS
-Foreach(StartStack .. EndStack, "_StackCounter") 
+Foreach(StartField .. EndField, "_FieldCounter") 
 	// Assigns image names for the current field, IM_CH1 - first channel image, IM_CH2 - second channel image etc
-	RobatzekProcs::Assign_FirstLastZplane()
+	RobatzekProcs::Assign_FirstLastZplane(sourcedata, _FieldCounter, NumberOfImages, NumberOfChannels)
 	
 	// User script STARTS
 	set( imagefilename1 = SourceData.sourcefilename[0])
-	RobatzekProcs::CreateDataCubeWithControl()
-	RobatzekProcs::DataCubeProjectionCorrection()
-	
-	////// Projects maximum intensity for each x-y position from datacube to image
-	rearrange(datacube,vec(vec(0,0,1),vec(1,0,0),vec(0,1,0)), vec(datacube.depth, datacube.width,datacube.height), reduce="max")
+	OperaTemplates::AssignStacks()
+	OperaTemplates::MaxProjections()
 		
-	delete(datacube) 
-	set(IM_projected1=result)
-	set(IM_projected2=result)
+	set(IM_Max = IM_Max_CH1)
 
 	// Detects the initial set of spots
-	//spot_detection_c_inner(IM_projected2, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
-	RobatzekProcs::Spot_Detection_MPIZ(IM_projected2, "", debugImages, spotMinimumDistance = 2, SpotPeakRadius = 0, SpotReferenceRadius = 6, SpotMinimumContrast = 0.4)
+	//spot_detection_c_inner(IM_Max, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=10, SpotMinimumContrast=0.1, SpotminimumToCellIntensity=0.8)
+	RobatzekProcs::Spot_Detection_MPIZ(IM_Max, "", debugImages, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=3, SpotMinimumContrast=0.3, SpotminimumToCellIntensity=1)
 	
 	delete(spotcandidates,wholecells)
 		
 	// Detects the actual spot locations and attributes like area, contrast, width, length etc and classifies the spots and filters the spots.
-	RobatzekProcs::SpotAttributeCalculation(IM_projected1, spots)
+	RobatzekProcs::SpotAttributeCalculation(IM_Max, spots)
 
 	// User script ENDS
 		
 	// Output sequence starts
 	push(EntireNumberOfSpotsInStackVector, Spots.count)
 	push(SpotsVector, Spots)
-	push(imageVector, IM_Projected1)
-	push(StacksUsed, _StackCounter )
+	push(imageVector, IM_Max)
+	push(StacksUsed, _FieldCounter )
 	delete(wholecells)
 
 	if(all_VarsOK == 0)
@@ -101,7 +96,7 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 end() // end of the foreach loop over stacks
 
 // REPORTS SPOT DETECTION  OUTPUT PARAMETERS  
-if (InvalidStacks<=EndStack-StartStack) 
+if (InvalidStacks<=EndField-StartField) 
 	// At least one field was analysed and we have an object list
 	set(OP_NumberOfSpots = all_Spots.count)
 	set(OP_SpotAverageIntensity=all_Spots.intensity.mean)
@@ -145,17 +140,16 @@ else()
 end()
 
 // REPORTS ADDITIONAL OUTPUTS  
-set(OP_StackCount = StackCount) // Total number of image fields
-set(OP_ValidStacks = StackCount - InvalidStacks) // Number of Valid Image fields is determined
+set(OP_StackCount = NumberOfFields) // Total number of image fields
+set(OP_ValidStacks = NumberOfFields - InvalidStacks) // Number of Valid Image fields is determined
 
 set( vectorPos = 0 )
-ForEach(1..StackCount)
+ForEach(1..NumberOfFields)
 	output( EntireNumberOfSpotsInStackVector[ vectorPos ], "Number of Spots in Stack # " & StacksUsed[ vectorPos ] )
 	set(vectorPos = vectorPos + 1 )
 end()
 
 output(OP_NumberOfSpots, "Number of Spots in whole Well")
-
 output(OP_SpotAverageIntensity, "Average Intensity of Spots")
 output(OP_SpotAverageArea, "Average Area of Spots")
 output(OP_SpotAverageLength, "Average Length of Spots")
@@ -171,12 +165,12 @@ output(OP_StackCount, "Total number of Stacks analyzed in Well")
 
 //Final Images.
 set(i = 0)
-set(_StackCounter = 0)
-foreach(StartStack .. EndStack, _StackCounter)
+set(_FieldCounter = 0)
+foreach(StartField .. EndField, _FieldCounter)
 	if(showIllustrations)
-		imageview(imageVector[i], "Signal - Stack "& _StackCounter,image=IM_projected1, gamma=2.0)
+		imageview(imageVector[i], "Signal - Stack "& _FieldCounter,image=IM_Max, gamma=2.0)
 		if(SpotsVector[i].count>0)
-			imageview(SpotsVector[i].border, "Spots - Stack " & _StackCounter, image=imageVector[i], title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
+			imageview(SpotsVector[i].border, "Spots - Stack " & _FieldCounter, image=imageVector[i], title="Detected Spots in Stack # " & _FieldCounter, gamma=2.0)
 		else()
 			set(InvalidStacks=InvalidStacks+1)
 		end() //end if Spots > 0

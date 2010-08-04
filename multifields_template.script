@@ -1,0 +1,28 @@
+//***************************************************
+// File: multifields_template.script
+//
+// The Sainsbury Laboratory
+// Matthew Beckers 04/08/2010
+// A template script that includes the code requied to read in images and produce a maximum projection for each stack using a for loop
+//***************************************************
+
+//Input and image projection copied from endomembrane.script. It could be instructive to use procedures from OperaTemplates instead.
+input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
+
+// READS IN IMAGES
+Singlewell(compact=yes)
+
+
+OperaTemplates::ControlImages(StackNo, sourcedata)
+OperaTemplates::AssignPlane()
+
+// LOOP OVER IMAGE FIELDS
+
+if(StackNo > 0)
+	set(StartField = StackNo, EndField = StackNo)
+end()
+Foreach(StartField .. EndField, "_FieldCounter") 
+	OperaTemplates::AssignStacks()
+	OperaTemplates::MaxProjections()
+//USER SCRIPT GOES HERE//	
+end()

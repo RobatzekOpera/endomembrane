@@ -1,6 +1,6 @@
 //*************************************************************************
-//  File Name:			MPI_leaves_h_seba.script
-//  Purpose: Detects spot-like features on leaf images, images from MPIZ-Ko"ln
+//  File Name:			endomembrane.script
+//  Purpose: Detects spot-like features on leaf images
 //
 // 							EVOTEC  TECHNOLOGIES 
 //  						Olavi Ollikainen
@@ -35,8 +35,6 @@
 //													* Total Cell Area in Well
 //													* Percentage of total Cell Area in Well
 //
-//													* Number Of Stomata
-//
 //													* Average Intensity of Spots
 //													* Average Area of Spots
 //													* Average Length of Spots
@@ -57,20 +55,26 @@
 
 // INPUT PARAMETERS
 input(StackNo, 0, "Stack No", "i", "Number of the stacks to analyze. If set to 0 all stacks are evaluated.")
-input(NumberOfChannels, 1, "Number Of Channels", "i", "Number of channels per field")
-input(ZplanesInStack,21,"Zplanes in stack","i","Number of z-planes in stack, a number of time moments in kinetic measurement")
-input(ShowIllustrations, NO, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
+input(CellSpaceThreshold, 25, "Cell Empty Space Threshold (%)", "i", "The percentage of information-less area that can be inside an initially detected cell before the cell is rejected as an area of image with no detectable leaf cells.")
+input(CellBorderThreshold, 100, "Border Cells Threshold (%)", "i", "The percentage of cell border that can be image border before the cell is rejected as being undetectable - an area of image with no detectable leaf cells.")
+input(BadStacksThreshold, 25, "Stack Rejection Threshold (%)", "i", "Percentage number of spots that must be within cells for Stack to be analysed")
+input(ShowIllustrations, YES, "Show Illustrations", "y", "YES- Output illustrations are depicted. No- Output illustrations are not shown.")
 input(WriteImages, YES, "Write Images", "y", "Write Images of the projected image and the detected spots to file")
 input(debugImages,NO, "Debug Using Images", "y", "YES- all intermediary images are shown.")
-input(MinStdDev,4,"MinStdDev","i","Minimum standard deviation of pixel intensity in image.")
-input(BadStacksThreshold, 25, "Stack Rejection Threshold (%)", "i", "Percentage number of spots that must be within cells for Stack to be analysed")
+
+
+Alias(IM_Projected1, IM_Max_CH1)
+Alias(_StackCounter, _FieldCounter)
 // READS IN IMAGES
 Singlewell(compact=yes)
 
-// COUNTS FIELDS AND CONTROLS IF ALL IMAGES ARE PRESENT
-RobatzekProcs::ControlImageFieldsStackAC2(sourcedata, NumberOfChannels, ZplanesInStack, StackNo)
-set(InvalidStacks = 0)  //counts black/grey stacks without information
-set(BadStacks = 0)   //counts stacks with Signal but no recognized cells
+//Image projection created by the OperaTemplates procedures
+set(imagefilename1 = SourceData.sourcefilename[0])
+OperaTemplates::ControlImages(StackNo, sourcedata)
+OperaTemplates::AssignPlane()
+
+set(InvalidStacks = 0)  //counts black/grey stacks without information, i.e. stacks that have no spots in recognized cells
+set(BadStacks = 0)   //counts stacks with Signal but very few recognized cells, dependent on the percentage of spots found ina nd out of recognized cells?
 set(all_VarsOK = 0)
 
 //CREATE GLOBAL WELL OBJECT PLACEHOLDERS
@@ -81,57 +85,42 @@ Create("objectlist" | all_Stomata = objectlist)
 Create("objectlist" | all_Gaps = objectlist)
 
 // LOOP OVER IMAGE FIELDS
-Foreach(StartStack .. EndStack, "_StackCounter") 
-	// Assigns image names for the current field, IM_CH1 - first channel image, IM_CH2 - second channel image etc
-	RobatzekProcs::Assign_FirstLastZplane()
-	
+Foreach(StartField .. EndField, "_FieldCounter") 
+	RobatzekProcs::Assign_FirstLastZplane(sourcedata, _StackCounter, NumberOfImages, NumberOfChannels)
 	// User script STARTS
-	set( imagefilename1 = SourceData.sourcefilename[0])
-	RobatzekProcs::CreateDataCubeWithControl()
-	RobatzekProcs::DataCubeProjectionCorrection()
-	
-	////// Projects maximum intensity for each x-y position from datacube to image
-	rearrange(datacube,vec(vec(0,0,1),vec(1,0,0),vec(0,1,0)), vec(datacube.depth, datacube.width,datacube.height), reduce="max")
-		
-	delete(datacube) 
-	set(IM_projected1=result)
-	set(IM_projected2=result)
+	OperaTemplates::AssignStacks()
+	OperaTemplates::MaxProjections()
 
-	///////Initial Leaf Cell Detection
-	RobatzekProcs::LeafCelsDetection(IM_projected1)
-	RobatzekProcs::DetectType2Objects(IM_projected1, Lines,LeafCells)
+	//Extract the vector of individual planes from the source data for easier access
+	set(Planes_CH1 = Images_CH1.SourceImage)
 
-	/////////Spot detection///////
-	// Creates the SearchRegion, where the spots are searched - for too big Cells
+	// LEAF CELL DETECTION
+	RobatzekProcs::planeSum_CelDetection(IM_Max_CH1, Planes_CH1, CellBorderThreshold, CellSpaceThreshold|LeafCells = objects, BigLeafCells = extracellularSpace)
+
+	// SPOT DETECTION
+	// Creates the SearchRegion, where the spots are searched - for outside Cells
 	CalcErosion(1,objects=BigLeafCells)
 	set(BigLeafCells=objects)
-	carrypixels(image=objects.eroded.image, mask=Lines.sk_mod_skeleton_LayerRemoved, data=0)
-	Setattr(SearchRegion,image.vector, objects=BigLeafCells)
+	Setattr(SearchRegion,BigLeafCells.body.image.vector, objects=BigLeafCells)
 	CalcArea(SearchRegion)
 	Set(BigLeafCells=objects)
 		
 	//Outer-cell spot detection Updated 07/07/10 with tweaked spot detection
-	Spot_Detection_C(IM_projected2, "SearchRegion", debugImages, wholecells = BigLeafCells)
+	RobatzekProcs::Spot_Detection_MPIZ(IM_projected1, "SearchRegion", debugImages, wholecells = BigLeafCells, SpotMinimumDistance=2, SpotPeakRadius=1, SpotReferenceRadius=3, SpotMinimumContrast=0.3, SpotminimumToCellIntensity=1)
 	
 	delete(spotcandidates,wholecells)
 	
 	// Detects the actual spot locations and attributes like area, contrast, width, length etc and classifies the spots and filters the spots.
 	RobatzekProcs::SpotAttributeCalculation(IM_projected1, spots)
 	set( BigCellSpots = Spots )
-	//if(ShowIllustrations)
-		//imageview(BigCellSpots.border, "Outer Spots",image=IM_projected2, title = "Spots out of recognized Cell Borders", gamma=2.0)
-	//end()
-		
+
 	// Creates the SearchRegion, where the spots are searched - for normal Cells
-	CalcErosion(1,objects=LeafCells)
-	set(LeafCells=objects)
-	carrypixels(image=objects.eroded.image, mask=Lines.sk_mod_skeleton_LayerRemoved, data=0)
-	Setattr(SearchRegion,image.vector, objects=LeafCells)
+	Setattr(SearchRegion,LeafCells.body.image.vector, objects=LeafCells)
 	CalcArea(SearchRegion)
 	Set(LeafCells=objects)
 		
 	// Detects the initial set of spots. Updated 07/07/10 with tweaked spot detection
-	Spot_Detection_C(IM_projected2, "SearchRegion", debugImages, wholecells = LeafCells)
+	RobatzekProcs::Spot_Detection_MPIZ(IM_projected1, "SearchRegion", debugImages, wholecells = LeafCells, SpotMinimumDistance=3, SpotPeakRadius=1, SpotReferenceRadius=3, SpotMinimumContrast=0.3, SpotminimumToCellIntensity=1)
 	
 	delete(spotcandidates,wholecells)
 		
@@ -141,19 +130,8 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	setAttr(SpotCenters, Center_Spot, objects = Spots | Spots = objects)
 	Spot_detection_dataToSearchObjects(IM_projected1, "SearchRegion",Spots,LeafCells)
 	set(LeafCells=Wholecells)
-
-	// STOMATA AND GAPS CLASSIFICATION
-	objectfilter(area>300, objects=objectstype2)
-	set(Stomata=objects)
-	CalcStat("max",Stencil=body,image=Stomata.body.image,objects=objectstype2)
-	objectfilter(max==0)
-	set(Gaps=objects)		
-	set( namelength = length( imagefilename1 ) )
-	set( corename = substr( imagefilename1, 1, namelength - 5 ) )
-	gamma( 2.0, image=IM_projected1)
-	set( Image_out = image)
 	
-	delete(M10,M11,M8,m9, ol_temp1,ol_temp2,M_bright, m_bright4, IM_planenumber,IM_sk_mod_skeleton_LayerRemoved,mask,image,result,IM_projected2,spotsfilteredout,nuclei,r6,r7,PlanenumberImage)
+	delete(M10,M11,M8,m9, ol_temp1,ol_temp2,M_bright, m_bright4, IM_planenumber,IM_sk_mod_skeleton_LayerRemoved,mask,image,result,spotsfilteredout,nuclei,r6,r7,PlanenumberImage)
 	// User script ENDS
 		
 	// Output sequence starts
@@ -181,6 +159,7 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	push(PercentageOfValidSpotsVector, PercentageOfValidSpots)
 
 	//**Reject Stacks by the percentage of spots inside recognised cells**//
+	//Note that a stack can be bad but valid, but an invalid stack is always bad. However, just being bad will exclude it from the analysis
 	if(PercentageOfValidSpots > BadStacksThreshold)
 		push(BadStacksVector, 0)
 		push(AverageAreaOfCellsInStackVector, leafcells.SearchRegionArea.mean)
@@ -192,21 +171,11 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 		if(all_VarsOK == 0)
 			set(all_LeafCells=LeafCells)
 			set(all_Spots=Spots)
-			set(all_ObjectsType2=ObjectsType2)
-			set(all_Stomata=Stomata)
-			set(all_Gaps=Gaps)
-			set(all_VarsOK = all_VarsOK + 1)
 		else()
 			AddObjects(LeafCells, objects=all_LeafCells, CheckOverlap=no) 
 			set(all_LeafCells=objects)  // Renames output from AddObjects()
 			AddObjects(Spots, objects=all_Spots, CheckOverlap=no) 
 			set(all_Spots=objects)
-			AddObjects(ObjectsType2, objects=all_ObjectsType2, CheckOverlap=no) 
-			set(all_ObjectsType2=objects)
-			AddObjects(Stomata, objects=all_Stomata, CheckOverlap=no) 
-			set(all_Stomata=objects)
-			AddObjects(Gaps, objects=all_Gaps, CheckOverlap=no) 
-			set(all_Gaps=objects)		
 		end()
 	else()
 		push(BadStacksVector, 1)
@@ -219,11 +188,8 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 	end()
 	push(LeafCellsVector, LeafCells)
 	push(SpotsVector, Spots)
-	push(ObjectsType2Vector, ObjectsType2)
-	push(StomataVector, Stomata)
-	push(GapsVector, Gaps)
 	push(BigCellSpotsVector, BigCellSpots)
-	push(imageVector, IM_Projected1)
+	push(imageVector, IM_projected1)
 	push( StacksUsed, _StackCounter )
 	push(FzplaneVector, FirstZPlane)
 	push(LzplaneVector, LastZPlane)
@@ -231,12 +197,10 @@ Foreach(StartStack .. EndStack, "_StackCounter")
 end() // end of the foreach loop over stacks
 
 // REPORTS SPOT DETECTION  OUTPUT PARAMETERS  
-if (InvalidStacks<=EndStack-StartStack) 
+if (BadStacks<=EndField-StartField) //Note that a stack can be bad but valid, but an invalid stack is always bad. However, just being bad will exclude it from the analysis
 	// At least one field was analysed and we have an object list
 	set(OP_NumberOfLeafCells = all_LeafCells.count)
 	set(OP_NumberOfSpots = all_Spots.count)
-	set(OP_NumberOfStomata=all_Stomata.count)
-	set(OP_NumberOfGaps = all_Gaps.count)
 	set(OP_SpotAverageIntensity=all_Spots.intensity.mean)
 	set(OP_SpotAverageArea=all_Spots.area.mean)
 	set(OP_SpotTotalSignal=all_Spots.IntegratedSpotSignal.sum)
@@ -297,12 +261,12 @@ else()
 end()
 
 // REPORTS ADDITIONAL OUTPUTS  
-set(OP_StackCount = StackCount) // Total number of image fields
-set(OP_ValidStacks = StackCount - InvalidStacks) // Number of Valid Image fields is determined
+set(OP_StackCount = NumberOfFields) // Total number of image fields
+set(OP_ValidStacks = NumberOfFields - InvalidStacks) // Number of Valid Image fields is determined
 
 set( vectorPos = 0 )
 if(all_LeafCells.count > 0)
-	ForEach(1..StackCount)
+	ForEach(1..NumberOfFields)
 		output( NumberOfCellsInStackVector[ vectorPos ], "Number of valid Cells in Stack # " & StacksUsed[ vectorPos ] )
 		output( NumberOfSpotsInStackVector[ vectorPos ], "Number of valid Spots in Stack # " & StacksUsed[ vectorPos ] )
 		output( EntireNumberOfSpotsInStackVector[ vectorPos ], "Number of Spots in and out of Cells in Stack # " & StacksUsed[ vectorPos ] )
@@ -313,12 +277,11 @@ if(all_LeafCells.count > 0)
 		output( AverageNumberOfSpotsPerCellVector[ vectorPos ], "Average Number of Spots in Cells in Stack # " & StacksUsed[ vectorPos ] )
 		output( AverageNumberOfSpotsPerCellStddevVector[ vectorPos ], "Average Number of Spots in Cells - Standard Deviation in Stack # " & StacksUsed[ vectorPos ] )
 		output( SpotsPerValidAreaVector[ vectorPos ], "Average Number of Spots per recognized Area in Stack # " & StacksUsed[ vectorPos ] )
-		//output(BadStacksVector[ vectorPos ], "Bad Stack for stack #"  & StacksUsed[ vectorPos ])
 		set(vectorPos = vectorPos + 1 )
 		
 	end()
 else()
-	ForEach(1..StackCount)
+	ForEach(1..NumberOfFields)
 		output(NAN,"Number of valid Cells in Stack # " & StacksUsed[ vectorPos ])
 		output(NAN, "Number of valid Spots in Stack # " & StacksUsed[ vectorPos ])
 		output(NAN, "Number of Spots in and out of Cells in Stack # " & StacksUsed[ vectorPos ] )
@@ -352,23 +315,15 @@ else()
 end()
 output(OP_TotalCellArea, "Total Cell Area in Well")
 set(OP_PercentageValidStacks = (100 * (1.0 * OP_ValidStacks) / (1.0 * OP_StackCount)))
-if(OP_ValidStacks > 0)
+if(BadStacks < 1)
 	set(PercentageOfTotalCellAreaOverAllValidStacks = (100 * (1.0 * all_LeafCells.SearchRegionArea.sum) / (1.0 * OP_ValidStacks * 357760)))
 else()
 	set(PercentageOfTotalCellAreaOverAllValidStacks = 0)
 end()
 output(PercentageOfTotalCellAreaOverAllValidStacks, "Percentage of total Cell Area in Well")
 
-output(OP_NumberOfStomata, "Number Of Stomata")
-//Output(OP_NumberOfGaps, "Number Of gaps between leaf cells")
-//output(OP_NumberOfSpotsPerArea, "Number of spots per area")
-//output(OP_NumberOfSpotsPerCell, "Average Number of spots per cell")
-//output(OP_SpotTotalSignalPerArea, "Total integrated spot signal per area")
-//output(OP_SpotTotalSignalPerArea_backgroundsubtracted, "Total integrated spot signal per area background subtracted")
 output(OP_SpotAverageIntensity, "Average Intensity of Spots")
 output(OP_SpotAverageArea, "Average Area of Spots")
-//output(OP_SpotTotalSignal, "Total integrated spot signal, over all spots")
-//output(OP_SpotTotalSignal_backgroundsubtracted, "Total integrated spot signal background subtracted, over all spots")
 output(OP_SpotAverageLength, "Average Length of Spots")
 output(OP_SpotAverageHalfWidth, "Average Half Width of Spots")
 output(OP_SpotAverageWidth2LengthRatio, "Average Width to Length Ratio of Spots")
@@ -378,10 +333,6 @@ output(OP_SpotAverageRoundnessStddev, "Average Roundness of Spots - Standard Dev
 output(OP_SpotAverageContrast, "Average Contrast of Spots")
 output(OP_SpotAverageContrastStddev, "Average Contrast of Spots - Standard Deviation")
 output(OP_SpotAveragePeakIntensity, "Average Peak Intensity of Spots")
-//if(StackNo<1)
-	//output(OP_AverageCellArea, "Average Cell Area")
-	//output(OP_TotalCellAreaStandard Deviation, "Total Cell Area Standard Deviation")
-//end()
 output(OP_StackCount, "Total number of Stacks analyzed in Well")
 output(OP_ValidStacks, "Number of valid Stacks in Well")    
 set(OP_PercentageValidStacks = (100 * (1.0 * OP_ValidStacks) / (1.0 * OP_StackCount)))
@@ -391,7 +342,7 @@ output(OP_PercentageValidStacks, "Percentage of valid Stacks in Well")
 Output(BadStacksThreshold, "Stack Rejection Threshold")
 set(i = 0)
 set(badstacks = vec())
-foreach(StartStack .. EndStack, _badstackcounter)
+foreach(StartField .. EndField, _badstackcounter)
 		if(BadStacksVector[i] == 1)
 			push(badstacks, _badstackcounter)
 		end()
@@ -402,15 +353,12 @@ tableview(badstacks, "Rejected Stacks", "Rejected Stacks")
 //**Final Images. Adds them to the report and writes the images if these options were selected. Shows stomata if any exist**//
 set(i = 0)
 set(_StackCounter = 0)
-foreach(StartStack .. EndStack, _StackCounter)
+foreach(StartField .. EndField, _StackCounter)
 	if(showIllustrations)
-		imageview(imageVector[i], "Signal",image=IM_projected1, gamma=2.0)
+		imageview(imageVector[i], "Signal" & _StackCounter,image=IM_projected1, gamma=2.0)
 		if(SpotsVector[i].count>0)
 			imageview(LeafCellsVector[i].border, "Cells - Stack " & _StackCounter, image=imageVector[i], title="Detected Leaf Cells in Stack # " & _StackCounter, gamma=2.0)
 			imageview(LeafCellsVector[i].body, "Cells Area - Stack" & _StackCounter, image=imageVector[i],title="Detected Leaf Cells in Stack #" & _StackCounter, gamma=2.0)
-			if(StomataVector[i].count > 0)
-				imageview(StomataVector[i].border, "Stomata - Stack " & _StackCounter, image=imageVector[i],title="Detected Stomata",gamma=2.0)
-			end()
 			imageview(SpotsVector[i].border, "Spots - Stack " & _StackCounter, image=imageVector[i], title="Detected Spots in Stack # " & _StackCounter, gamma=2.0)
 			imageview(BigCellSpotsVector[i].border, "Outer Spots - Stack " & _StackCounter, image=imageVector[i], title = "Spots out of recognized Cell Borders in Stack # " & _StackCounter, gamma=2.0)
 		end() //end if spotsFiletered > 0

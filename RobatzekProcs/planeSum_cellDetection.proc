@@ -1,0 +1,213 @@
+//***************************************************
+// File: planeSum_cellDetection.proc
+//
+//			The Sainsbury Laboratory
+//			Matthew Beckers
+//	email: Matthew.Beckers@tsl.ac.uk
+//
+//			 Cell Detection: Sum of Planes.
+//
+// To allow use of this procedure in Acapella scripts, please
+// make sure that this fle is placed within the standard library directory of the Opera Software. Commonly,
+// this is C:\PerkinElmerCTG\IMacro\StdLib\RobatzekProcs
+//
+//	DESCRIPTION
+// 		A mask is taken of each plane to represent, as closely as possible and with as little noise as possible, the placement of all cell structures within the plane. Each 
+// mask is then individually eroded and then added together to create a projection. The intensities within the projection will then represent the number of times that any 
+// particular cell structure has been present within the plane. Since cell walls should be present in most of the planes, these will show up with a higher intensity
+//
+// 		Once the projection is found, a bright mask is taken of the projection to lift off parts that are brighter than their surroundings. This effectively disconnects the cell 
+// walls from all other structures, which are now considered as noise. Objects are specified as disjointed structures and are filtered based upon attributes that a cell
+// wall is assumed to have, such as intensity in the sum of planes projection, size, and shape.
+//
+//		In a desperate attempt to join disconnected parts of the cell wall, the objects are dilated and then eroded to "smudge" them together. This has the side effect of 
+// connecting unwanted structures that are still present after filtering and creating loops in wanted structures.
+//
+// The mask can then be inverted and the new objects are then the areas inside the cells. These are dilated out to include the cell walls within the cell objects and a Stencil is taken of the disjointed bodies. These are then the initial cell bodies, and further filtering is used to remove bad cells, e.g. cells 
+// that have been too cut off too much by the image border and cells that have too much information-less space in them. These are simple methods to help identify image area that contains undetetectable cells, which should not be included in any further image analysis
+// cells that are wrapping around otheres, removing the border seperating the two sides.
+// 
+
+Package(RobatzekProcs)
+proc planeSum_CelDetection(
+	Image IM_Max in "The projected image",
+	memblock Images in "The Source images from one stack",
+	double borderThreshold=100 in "The proportion of cell border that is allowed to be part of the image border before the cell is rejected",
+	double spaceThreshold=25 in "The proportion of information-less space that is allowed inside an initially detected cell (which includes image borders) before it is rejected as image area without detectable cells",
+	objectlist Objects out "The output list of detected cells",
+	objectlist ExtracellularSpace out "The detected area outside the cells"
+)Robatzek Procedures, Object recognition "A procedure to detect cells in an image using a sum of planes method, where the high intensity areas of all planes in a field are summed together. The procedure is based on the assumption that cell walls are usually present throughout most planes whereas most other image material is only present throughout a few planes."
+{
+	//Capture height and width of image
+	set(IM_height = IM_Max.height)
+	set(IM_width = IM_Max.width)
+
+	//Extract the vector of individual planes from the source data for easier access
+	set(Planes = Images)
+
+	//Loop over each plane in the stack
+	foreach(Planes, plane)
+		//Take a mask with calculated threshold
+		ThresholdXX(1, image = plane)
+		Mask(threshold, image = plane)
+		
+		//Keep a vector of all plane masks found
+		Push(planemasks, Mask)
+	end()
+
+	//Take a mask of the projection and find all the objects
+	ThresholdXX(1, image = IM_Max)
+	Mask(threshold, image = IM_Max|projectionMask = Mask)
+	Mask2Stencil(projectionMask|projectionStencil = Stencil)
+	Stencil2Objects(projectionStencil|projectionObjects = Objects)
+
+//***SUM OF PLANES***//
+	//start with a blank canvas
+	Blank(IM_width, IM_height | sum = image)
+
+	//loop over planes
+	foreach(planemasks, thismask)
+		//Removal of small objects that might create noise over time
+		mask2stencil(thismask)
+	    Stencil2Objects(Stencil)
+		CalcArea(objects = objects)
+		ObjectFilter(area >100, objects = objects)
+		//RobatzekProcs::CalcRoundnessCorrected("body", objects = objects)
+		
+		set(mask = objects.body.mask.image)
+		
+		//dilation of mask to thicken moving cell walls so that they may overlap throughout planes
+		Erosion(-2, 1, image = mask | mask = image)
+		Mask2Stencil(mask)
+		Stencil2Objects(Stencil | planemask = objects)
+		
+	Plus(sum, planemask.body.mask.image | sum = result)
+
+	end()
+
+	//***Create an object list based on the parts of the image that is brighter than its surroundings***//
+	//Expand the intensity range to gain a better effect
+	Expand(10,image = sum | expandedsum = image)
+	
+//Take a Bright Mask of the expanded projection - Areas that are brighter than surroundings will gain much hgiher intensity
+	Bright_Mask(expandedsum, 20 | brightmask = result)	
+
+	Bright_Mask(expandedsum, 40 | brightmask1 = result)
+	dark_Mask(expandedsum,  40 | darkmask = result)
+	OR(brightmask1, image = darkmask)
+	NOT(image = image)
+	Mask2Stencil(image)
+	Stencil2Objects(Stencil)
+	CalcArea(objects = objects)
+	ObjectFilter(area > 100|space = objects)
+	
+	//Turn the bright mask to a stencil and then to a list of disjointed objects
+	Mask2Stencil(brightmask)
+	Stencil2Objects(Stencil|BrightObjects = objects)
+
+	//First checkpoint
+	set(brightObjects1 = brightobjects)
+
+//***OBJECT FILTERING***//
+	//Remove single pixel objects
+	CalcArea(objects = BrightObjects|BrightObjects = objects)
+	ObjectFilter(area > 1, objects = BrightObjects|BrightObjects = objects)
+
+	//Remove objects that do not appear in many planes - bad logic. Some cell walls appear in only a few planes. Currently uses a very weak filter as a result of this problem
+	CalcIntensity(body, sum, objects = BrightObjects | BrightObjects = objects)
+	ObjectFilter(intensity > 3, objects = BrightObjects| BrightObjects = objects)
+
+	//Remove objects that do not seem like long cell walls
+	CalcWidthLength(BrightObjects, YES|BrightObjects = objects)
+	ObjectFilter(full_length > 50, objects = BrightObjects|BrightObjects = objects)
+
+	//Second Checkpoint
+	set(BrightObjects2 = BrightObjects)
+
+	//To "smudge" together seperated segments of cell wall, dilate then erode
+	Erosion(-3, 1, image=BrightObjects.body.mask.image|dilatedBrightObjects = image)
+	Erosion(3, 1, image=dilatedBrightObjects|erodedBrightObjects = image)
+	Mask2Stencil(erodedBrightObjects)
+	Stencil2Objects(Stencil|BrightObjects = objects)
+
+	//Create a border to estimate the extent to which the skeleton moves toward the image border
+	Blank(IM_width, IM_height | border = image)
+	NOT(image = border | border = image)
+	ClearBorders(border, 2 | border = Stencil)
+	NOT(image = border | border = image)
+
+	or(BrightObjects.body.mask.image, image = border)
+	Mask2Stencil(image)
+	Stencil2Objects(Stencil|BrightObjectsBordered = objects)
+
+	//On the remaining objects filter out objects based on the inensity of the original max projection
+	CalcIntensity(body, IM_Max, objects = BrightObjects | BrightObjects = objects)
+	ThresholdXX(1.5, image = IM_Max)
+	ObjectFilter(intensity > threshold, objects = BrightObjects| BrightObjects = objects)
+
+	//Objects after final filtering
+	set(BrightObjectsFiltered = BrightObjects)
+
+	//Attempt to fill holes in the cell wall - still quite problematic. Possibly include a check of intensity?
+	RobatzekProcs::FillSmallHoles(200, BrightObjects|brightObjects = objects)
+
+	//Create a border to estimate the extent to which the skeleton moves toward the true image border
+	Blank(IM_width, IM_height | border = image)
+	NOT(image = border | border = image)
+	ClearBorders(border, 3 | border = Stencil)
+	NOT(image = border | border = image)
+
+	//Inversion of final cell wall mask to create the disjointed bodies of the found cells
+	NOT(image = BrightObjects.body.mask.image|initialCells = image)
+
+	//Conversion of disjointed masks to Stencils and then an objectlist
+	Mask2Stencil(initialCells)
+	Stencil2Objects(Stencil|initialCellObjects = objects)
+
+	CalcErosion(-100, objects = initialCellObjects)
+	Stencil2Objects(objects.eroded|initialCellObjects = objects)
+
+//	set(FinalCells = objects)
+//	NOT(image = FinalCells.body.mask.image)
+//	Mask2Stencil(image, neighbourhood = 8)
+//	Stencil2Objects(Stencil)
+
+	//Remove all remaining dead ends.
+//	CalcErosion(-1, objects = FinalCells)
+//	Stencil2Objects(objects.Eroded | FinalCells = objects)
+
+	//Create a border to estimate the extent to which the skeleton moves toward the true image border
+	Blank(IM_width, IM_height | border = image)
+	NOT(image = border | border = image)
+	ClearBorders(border, 3 | border = Stencil)
+	NOT(image = border | border = image)
+	
+	//***Find proportion of border of cells that are part of the image border
+	Mask2Stencil(border|borderStencil = Stencil)
+	and(borderStencil.image, image = initialCellObjects.border.image)
+	SetAttr(imageBorder, image.vector, objects = initialCellObjects)
+
+	//get imageBorderProportion attribute
+	CalcArea(imageBorder, objects = objects)
+	CalcArea(border, objects =  objects)
+	SetAttr(imageBorderProportion, (imageBorder_area/border_area)*100, objects = objects)
+
+	ObjectFilter(imageBorderProportion < BorderThreshold)
+
+	//Filter the final cells on whether the percentage of dead space is too high within them.
+	and(space.body.image, image = objects.body.image)
+	SetAttr(emptyspace, image.vector, objects = objects)
+	CalcArea(emptyspace, objects = objects)
+	CalcArea(objects = objects)
+	CalcAttr(percentagespace, emptyspace_area/area*100, objects = objects)
+
+	ObjectFilter(percentagespace < spaceThreshold|FinalCells = objects)
+	
+	NOT(image = FinalCells.body.mask)
+	Mask2Stencil(image)
+	Stencil2Objects(Stencil|Space = objects)
+
+	//OUPUTS
+	set(Objects = FinalCells)
+	set(ExtraCellularSpace = Space)
+}

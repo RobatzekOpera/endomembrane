@@ -1,0 +1,168 @@
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01//EN"
+    "http://www.w3.org/TR/html4/strict.dtd"
+    >
+<html lang="en">
+<head>
+    <title>The Endomembrane Script and Related Procedures</title>
+</head>
+<body>
+    <h1>The Endomembrane Script and Related Procedures</h1>
+    <h2>Summary</h2>
+    <p>The Endomembrane script may be run on images of wells produced by the Opera Confocal microscope. It aims to detect, as best as possible, regions in the image that indicate cell bodies and end omembrane structures, indicated by localised areas of high intensity (usually small, white spots). The script outputs a list of attributes that includes the number of detected cells and spots but extends to the physical attributes of cells and spots as well as some simple measurements on teh quality of each field relating to the information gained from it. The information here will describe the inputs and outputs of the script, how the script works, the custom procedures used within the script and the differences between this version of the script and the previous version.</p>
+    <h2>Inputs</h2>
+    <div class="image">
+        <IMG src="inputs.JPG" alt="Screenshot of the input parameters and their defaults in the Acapella player" />
+        <div class="caption">
+            Screenshot of the input parameters and their defaults in the Acapella player
+        </div>
+    </div>
+    <p><em>Stack No -</em> The stack number indicating the stack that should be analysed. Entering a &#8220;0&#8221; here will cause all stacks in the well to be analysed one after the other.</p>
+    <p><em>Cell Empty Space Threshold -</em> The percentage of information-less area that can be inside an initially detected cell before the cell is rejected as being an area of image with no detectable leaf cells.</p>
+    <p><em>Border Cells Threshold -</em> The percentage of cell border that can be image border before the cell is rejected as being undetectable - an area of image with no detectable leaf cells.</p>
+    <p><em>Show Illustrations -</em> Ticking this box will cause the detected spots and cells to be visualized in the output.</p>
+    <p><em>Write Images -</em> Ticking this box will cause images of the detected spots and cells to be written to the directory from which the well was selected.</p>
+    <p><em>Debug Using Images -</em> Images showing the result of each process in the script will be outputed. Useful for debugging only.</p>
+    <p><em>Rejected Stack Threshold -</em> The highest percentage of spots outside cells before the image is rejected from the analysis.</p>
+    
+    <h2>Outputs</h2>
+    <h3>Well Outputs</h3>
+    <ul>
+        <li>Number of spot Candidates</li>
+        <li>Number of classified Spots</li>
+        <li>Number of spots per cell</li>
+        <li>Number of spots per cell area</li>
+        <li>Integrated spot signal per cellular signal</li>
+        <li>Integrated spot signal per cellular signal - local background subtracted</li>
+        <li>Integrated spot signal per cell area</li>
+        <li>Integrated spot signal - local background subtracted - per cell area</li>
+        <li>Number of leaf cells in whole well</li>
+        <li>Average cell area in whole well</li>
+        <li>Standard deviation of average cell area in whole well</li>
+        <li>Number of spots in whole well</li>
+        <li>Average number of spots per cell in whole well</li>
+        <li>Standard deviation of average number of spots per cell in whole well</li>
+        <li>Total cell area in well</li>
+        <li>Percentage of total cell area in well</li>
+        <li>Average intensity of spots</li>
+        <li>Average area of spots</li>
+        <li>Average length of spots</li>
+        <li>Average half width of spots</li>
+        <li>Average width to length ratio of spots</li>
+        <li>Standard deviation of average width to length ratio of spots</li>
+        <li>Average roundness of spots</li>
+        <li>Standard deviation of average roundness of spots</li>
+        <li>Average contrast of spots</li>
+        <li>Standard deviation of average contrast of spots</li>
+        <li>Average peak intensity of spots</li>
+        <li>Total number of stacks analyzed in well</li>
+        <li>Number of valid stacks in well</li>
+        <li>Percentage of valid stacks in well</li>
+        <li>Stack rejection threshold</li> 
+    </ul>
+    <h3>Stack Outputs</h3>
+    <ul>
+        <li>Number of valid cells in stack</li>
+        <li>Number of valid spots in stack</li>
+        <li>Number of spots in and out of cells in stack</li>
+        <li>Percentage of inner spots in stack</li>
+        <li>Average area of cells in stack</li>
+        <li>Standard deviation of average area of cells in stack</li>
+        <li>Percentage detected cell cover in stack</li>
+        <li>Average number of spots in stack</li>
+        <li>Standard deviation of average number of spots in stack</li>
+        <li>Average number of spots per recognised area in stack</li>
+    </ul>
+    
+    <h2>Analysis</h2>
+    <p>Objects within each image stack are detected by first finding a projection resulting from the combination of planes in one stack. Two types of projections are used within the script. The most common is maximum projections and is taken using supporting procedures from the Opera Templates library, specifically MaxProjections.</p>
+    <p>The first analysis is the detection of leaf cells in each stack. This is done using the procedure <em>planeSum_celDetection</em>. The result is a list of objects indicating the placement of leaf cells and a second list of objects that indicate areas where no cells could be detected.</p>
+    <p>Spot detection is carried out using the procedure <em>spot_detection_MPIZ</em> from the RobatzekProcs library. The procedure is used to search for spots within cells and spots in regions where no cells were detected.</p>
+    <p>To calculate several of the spot attributes, the detected spots are given to the procedure <em>SpotAttributeCalculation</em> from the RobatzekProcs library.</p>
+    <p>The size of the area containing no detected cells can affect the analysis of a field. If a proportion of the spots above the stack rejection threshold reside outside cells, the field is withdrawn from the analysis. The stack rejection threshold can be set from the Acapella player and the default level is 25%.</p>
+    <P>A stack will be labelled as invalid if there are no detected spots within leaf cells.</p>
+    
+    <h2>Major Changes</h2>
+    <h3>Well Sorting and Projections</h3>
+    <p>The procedures <em>ControlImageFieldsStackAC2</em>, <em>CreateDataCubeWithControl</em>, <em>DataCubeProjectionCorrection</em> from RobatzekProcs have been removed and replaced with procedures from the Opera Templates library for sorting images from wells and creating a Maximum Projection. This has changed the resulting maximum projection, and more blank areas are now filled with information</p>
+    <h3>Cell Detection</h3>
+    Cells in the image were detected using the procedure
+    <h3>Spot Detection</h3>
+    <p>Essentially the same procedure for spot detection is used, but the parameters have changed (table 1). Spots were then filtered by the procedure SpotClassificationLeafCells. This was found to remove too many actual spots and has been replaced by SpotAttributeCalculation, which simply calculates spot attributes.</p>
+    <table border=1>
+        <tr>
+            <th>Script</th>
+            <th>Minimum Distance <br/>Between Centers</th>
+            <th>Spot Peak <br/>Radius</th>
+            <th>Spot Reference <br/>Radius</th>
+            <th>Spot Minimum <br/>Contrast</th>
+            <th>Spot to Cell <br/>Minimum Contast</th>
+        </tr>
+        <tr>
+            <td>Original Endomembrane</td>
+            <td>2</td>
+            <td>1</td>
+            <td>10</td>
+            <td>0.1</td>
+            <td>0.8</td>
+        </tr>
+        <tr>
+            <td>Current Endomembrane</td>
+            <td>2</td>
+            <td>1</td>
+            <td>3</td>
+            <td>0.3</td>
+            <td>1</td>
+        </tr>
+    </table>
+    <div class="caption">Table 1: Comparison of parameters for the spot detection procedure for the original and current script</div>
+    <h3>Secondary Object Detection</h3>
+    <p>Before, the endomembrane script would go on to search for &#8220;type 2&#8221 objects such as haustoria, gaps and stomata. Since these were both rarely found and innacurate, these procedures were removed from the script. The endomembrane script will now only attempt to detect cells (using PlaneSum_CelDetection) and spots (using spotDetection_MPIZ).</p>
+    
+    <h2>Supporting Procedures</h2>
+    <div class=NB>NB: Procedures that are named using the combination of letters, &#8220;cell&#8221;, are automatically deprecated and hidden within any procedure library list. This may be related to an attempt to change the semantics of the Acappella language from a cell-oriented language to a more general object-oriented language. For this purpose it does not make sense to use the word &#8220;object&#8221; instead of &#8220;cell&#8221;, so instead I have opted for a shorthand (and incorrect) spelling.</div>
+    <h3>planeSum_celDetection (from robatzekprocs.proc)</h3>
+    <p>Detects the positions of leaf cells within a field of planes. High intensities from each mask are kept and added together to create an image projection, where the intensity of each pixel equals the number of planes the pixel is present in. From this, a mask of locally high intensities is produced using Bright_Mask, which allows the bright intensity of the cell wall to be mostly seperated from the noise of bright objects within the cell.</p>
+    
+    <table>
+        <tr>
+            <td><IMG src="cells_Max.jpg" width=300 /></td>
+            <td><IMG src="cells_sum.jpg" width=300 /></td>
+        </tr>
+        <tr>
+            <td>a) Max projection of for a single field</td>
+            <td>b) The sum of this field's plane masks</td>
+        </tr>
+        <tr>
+            <td><IMG src="cells_brightmask.jpg" width=300 /></td>
+            <td><IMG src="cells_objects.jpg" width=300 /></td>
+        </tr>
+        <tr>
+            <td>c) The bright mask of the sum</td>
+            <td>d) The cell wall as objects, after filtering of noise objects</td>
+        </tr>
+        <tr>
+            <td><IMG src="cells_final.jpg" width=300 /></td>
+        </tr>
+        <tr>
+            <td>e) Final borders of detected cells</td>
+        </tr>
+    </table>
+    
+    <p>A large problem with this method is that the cell wall can become seperated in the places where it is not at its brightest. This causes unfinished ends to the cell wall which are eventually removed, causing the cells to merge together. This has been partially solved by slightly dilated the cell wall so that the cell wall can join back together over small gaps before eroding it again. However this causes other problems, such as unwanted inner cell noise conencting the the cell wall mask and creating fake cell walls that split cells up places where they become thin.</p>
+    <p>A simple method is used to detect areas of the image where cells are not in focus. This involves taking a Bright_Mask and a Dark_Mask to find all variations in the image. Areas left over are classified as outside the cell and outputed in a seperate objectlist</p>
+    <h3>SpotAttributeCalculation (from robatzekprocs.proc)</h3>
+    Calculates extra attributes from an input list of objects (spots) and adds them to the objectlist.
+    <h3>spotDetection_MPIZ.proc (from robatzekprocs.proc)</h3>
+    Essentially a wrapper for the spot detection procedure Spot_Detection_C_Inner.
+    
+    <h2>Further Scripts and Procedures</h2>
+    <h3>spotAnalysis.script</h3>
+    Produces the neccessary samples from an image to carry out a sensitivity and specificity analysis between procedures. Currently, the script will compare three different spot detection procedures, but this may be edited so that any number and type of procedures may be compared.
+    <h3>leafless_endomembrane_detection.script</h3>
+    Detects spots within a well without detecting leaf cells.
+    <h3>multifields_template.script</h3>
+    <p>A template script that includes the code requied to read in images and produce a maximum projection for each stack using a for loop</p>
+    <h3>ClusterDetection.proc (from robatzekprocs.proc)</h3>
+    <p>A small, simple procedure that attempts to find abnormal clustering of spots. Currently not very useful.</p>
+</body>
+</html>
